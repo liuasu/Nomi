@@ -111,3 +111,45 @@ jobs:
           # Windows 代码签名（可选）
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+  publish-aliases:
+    name: Publish stable download aliases
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download original release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p aliases
+          gh release download "${{ steps.meta.outputs.tag }}" \
+            -R "${{ github.repository }}" \
+            -p "Nomi-${{ steps.meta.outputs.version }}-arm64.dmg" \
+            -p "Nomi-${{ steps.meta.outputs.version }}.dmg" \
+            -p "Nomi-Setup-${{ steps.meta.outputs.version }}.exe" \
+            -D aliases
+
+      - name: Create stable-name copies
+        run: |
+          cp "aliases/Nomi-${{ steps.meta.outputs.version }}-arm64.dmg" "aliases/Nomi-mac-arm64.dmg"
+          cp "aliases/Nomi-${{ steps.meta.outputs.version }}.dmg"       "aliases/Nomi-mac-intel.dmg"
+          cp "aliases/Nomi-Setup-${{ steps.meta.outputs.version }}.exe" "aliases/Nomi-windows-setup.exe"
+
+      - name: Upload aliases to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            -R "${{ github.repository }}" \
+            aliases/Nomi-mac-arm64.dmg \
+            aliases/Nomi-mac-intel.dmg \
+            aliases/Nomi-windows-setup.exe \
+            --clobber
