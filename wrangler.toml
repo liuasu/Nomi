@@ -1,8 +1,6 @@
 name = "nomi"
 compatibility_date = "2026-05-04"
 
-[build]
-command = "node -e \"const fs=require('fs'); for (const f of ['marketing/index.html','marketing/robots.txt','marketing/sitemap.xml']) { if (!fs.existsSync(f)) throw new Error(f+' missing'); } console.log('marketing assets ready');\""
 
 [assets]
 directory = "./marketing"
