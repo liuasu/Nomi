@@ -8,12 +8,11 @@ import StatsModelCatalogManagement from '../ui/stats/system/modelCatalog/StatsMo
 import {
   createLocalProject,
   deleteLocalProject,
-  readLocalProject,
-  saveLocalProject,
   useLocalProjects,
   type LocalProjectSummary,
 } from './library/localProjectStore'
 import { createWorkbenchProjectPersistenceService } from './project/projectPersistenceService'
+import { readCurrentWorkbenchProjectPayload } from './project/workbenchProjectSession'
 import { useWorkspaceEvents } from './useWorkspaceEvents'
 import { DesignDrawer } from '../design'
 import { cn } from '../utils/cn'
@@ -180,14 +179,23 @@ export default function NomiStudioApp(): JSX.Element {
 
   const handleRenameProject = React.useCallback((newName: string) => {
     if (!activeProject) return
-    const current = readLocalProject(activeProject.id)
-    if (!current) return
-    const record = saveLocalProject(activeProject.id, {
-      workbenchDocument: current.workbenchDocument ?? { version: 1, title: newName, contentJson: null, updatedAt: Date.now() },
-      timeline: current.timeline ?? { clips: [], totalDuration: 0 },
-      generationCanvas: current.generationCanvas ?? { nodes: [], edges: [] },
-    }, newName)
-    setActiveProject({ ...activeProject, name: record.name })
+    const trimmed = newName.trim() || '未命名 Nomi 项目'
+    if (trimmed === activeProject.name) return
+    const renamed: LocalProjectSummary = { ...activeProject, name: trimmed }
+    // Update React state so AppBar reflects the new name immediately
+    setActiveProject(renamed)
+    // Persist the new name with the current in-memory canvas/timeline/document
+    // state (NOT a re-read from disk — that would be stale). This updates the
+    // project file on disk AND publishes the new summary so the project library
+    // card refreshes via SWR.
+    const service = projectPersistenceServiceRef.current
+    if (service) {
+      void service.persistProject(renamed, readCurrentWorkbenchProjectPayload())
+        .catch((error: unknown) => {
+          console.error('project rename save error', error)
+          toast('项目重命名保存失败', 'error')
+        })
+    }
   }, [activeProject])
 
   if (view === 'library') {
