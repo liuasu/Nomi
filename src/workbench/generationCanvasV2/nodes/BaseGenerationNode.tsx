@@ -297,11 +297,23 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
         : pullsEast
           ? clampNumber(resizeStart.width + deltaX, MIN_NODE_WIDTH, MAX_NODE_WIDTH)
           : resizeStart.width
+      // Compute the stored media aspect ratio (image or video)
+      const mediaAspect = (
+        typeof node.meta?.imageAspectRatio === 'number' && node.meta.imageAspectRatio > 0
+          ? node.meta.imageAspectRatio
+          : typeof node.meta?.videoAspectRatio === 'number' && node.meta.videoAspectRatio > 0
+            ? node.meta.videoAspectRatio
+            : null
+      )
+      // When only width changes (E/W handles) and we know the aspect ratio, keep proportions
+      const widthOnlyResize = (pullsEast || pullsWest) && !pullsNorth && !pullsSouth
       const nextHeight = pullsNorth
         ? clampNumber(resizeStart.height - deltaY, MIN_NODE_HEIGHT, MAX_NODE_HEIGHT)
         : pullsSouth
           ? clampNumber(resizeStart.height + deltaY, MIN_NODE_HEIGHT, MAX_NODE_HEIGHT)
-          : resizeStart.height
+          : (widthOnlyResize && mediaAspect)
+            ? clampNumber(Math.round(nextWidth / mediaAspect), MIN_NODE_HEIGHT, MAX_NODE_HEIGHT)
+            : resizeStart.height
       updateNode(node.id, {
         position: {
           x: pullsWest ? resizeStart.x + resizeStart.width - nextWidth : resizeStart.x,
@@ -314,6 +326,7 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
         meta: {
           ...(node.meta || {}),
           userResized: true,
+          previewHeight: nextHeight,
         },
       }, { persist: false })
       return
@@ -861,8 +874,8 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
           ) : (
             <img
               className={cn(
-                'w-full h-full min-h-0 object-contain pointer-events-none',
-                'bg-nomi-ink-05 select-none',
+                'w-full h-full min-h-0 object-cover pointer-events-none',
+                'select-none',
               )}
               src={node.result.url}
               alt=""
