@@ -134,19 +134,19 @@ export async function maybeAutostartAgentsBridge(): Promise<void> {
 	const childEnv = {
 		...process.env,
 		AGENTS_PROFILE: "code",
-		...(process.env.TAPCANVAS_API_KEY
+		...(process.env.NOMI_API_KEY ?? process.env.TAPCANVAS_API_KEY
 			? {}
 			: cliTapConfig.tapcanvasApiKey
 				? {
-					TAPCANVAS_API_KEY: cliTapConfig.tapcanvasApiKey,
+					NOMI_API_KEY: cliTapConfig.tapcanvasApiKey,
 					tapcanvasApiKey: cliTapConfig.tapcanvasApiKey,
 				}
 				: {}),
-		...(process.env.TAPCANVAS_API_BASE_URL
+		...(process.env.NOMI_API_BASE_URL ?? process.env.TAPCANVAS_API_BASE_URL
 			? {}
 			: cliTapConfig.tapcanvasApiBaseUrl
 				? {
-					TAPCANVAS_API_BASE_URL: cliTapConfig.tapcanvasApiBaseUrl,
+					NOMI_API_BASE_URL: cliTapConfig.tapcanvasApiBaseUrl,
 					tapcanvasApiBaseUrl: cliTapConfig.tapcanvasApiBaseUrl,
 				}
 				: {}),

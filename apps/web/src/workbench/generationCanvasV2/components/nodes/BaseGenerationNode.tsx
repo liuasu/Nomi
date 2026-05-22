@@ -565,6 +565,7 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
         width: visualSize.width,
         height: visualSize.height,
         gridTemplateRows: `${previewHeight}px`,
+        willChange: 'transform',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -638,34 +639,37 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
           onPointerDown={(event) => event.stopPropagation()}
         >
           <button
-            className="generation-canvas-v2-node__panorama-toolbar-item generation-canvas-v2-node__panorama-toolbar-item--icon"
+            className="generation-canvas-v2-node__panorama-toolbar-item"
             type="button"
             aria-label="下载图片"
             title="下载图片"
             onClick={handleDownloadResult}
           >
             <IconDownload size={16} stroke={1.8} />
+            <span>下载</span>
           </button>
           <span className="generation-canvas-v2-node__panorama-toolbar-divider" />
           <button
-            className="generation-canvas-v2-node__panorama-toolbar-item generation-canvas-v2-node__panorama-toolbar-item--icon"
+            className="generation-canvas-v2-node__panorama-toolbar-item"
             type="button"
-            aria-label="2x2 切图"
-            title="2x2 切图"
+            aria-label="2×2 切图"
+            title="2×2 切图"
             disabled={splittingGridSize !== null}
             onClick={() => { void handleImageGridSplit(2) }}
           >
             <IconLayoutGrid size={16} stroke={1.8} />
+            <span>2×2 切图</span>
           </button>
           <button
-            className="generation-canvas-v2-node__panorama-toolbar-item generation-canvas-v2-node__panorama-toolbar-item--icon"
+            className="generation-canvas-v2-node__panorama-toolbar-item"
             type="button"
-            aria-label="3x3 切图"
-            title="3x3 切图"
+            aria-label="3×3 切图"
+            title="3×3 切图"
             disabled={splittingGridSize !== null}
             onClick={() => { void handleImageGridSplit(3) }}
           >
             <IconGrid3x3 size={16} stroke={1.8} />
+            <span>3×3 切图</span>
           </button>
         </div>
       ) : null}

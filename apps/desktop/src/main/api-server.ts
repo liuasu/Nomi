@@ -45,11 +45,11 @@ export async function startApiServer(): Promise<ApiServerResult> {
   process.env.ASSET_HOSTING_LOCAL_MODE = '1';
   process.env.ASSET_LOCAL_ROOT = assetsDir;
 
-  // Desktop 模式跳过认证
-  process.env.TAPCANVAS_DEV_PUBLIC_BYPASS = '1';
-  process.env.TAPCANVAS_DEV_PUBLIC_BYPASS_SECRET = devBypassSecret;
-  process.env.TAPCANVAS_DEV_PUBLIC_BYPASS_USER_ID = localUserId;
-  process.env.TAPCANVAS_DEV_PUBLIC_BYPASS_ROLE = 'admin';
+  // Desktop 模式跳过认证 (single-user mode)
+  process.env.NOMI_SINGLE_USER_MODE = '1';
+  process.env.NOMI_SINGLE_USER_SECRET = devBypassSecret;
+  process.env.NOMI_SINGLE_USER_ID = localUserId;
+  process.env.NOMI_SINGLE_USER_ROLE = 'admin';
 
   // 动态 require hono-api（必须先 build hono-api）
   // hono-api build 产物在 apps/hono-api/dist/main.js

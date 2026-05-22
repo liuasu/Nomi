@@ -123,6 +123,6 @@ Agent 执行时，Web 画布会实时展示变化。
 
 **配置**
 ```bash
-export TAPCANVAS_API_BASE_URL=http://localhost:8788
-export TAPCANVAS_API_KEY=your-token
+export NOMI_API_BASE_URL=http://localhost:8788
+export NOMI_API_KEY=your-token
 ```

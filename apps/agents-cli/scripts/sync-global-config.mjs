@@ -22,10 +22,12 @@ const globalConfig = {
   tapcanvasApiBaseUrl:
     localConfig?.tapcanvasApiBaseUrl ??
     envConfig.tapcanvasApiBaseUrl ??
+    envConfig.NOMI_API_BASE_URL ??
     envConfig.TAPCANVAS_API_BASE_URL,
   tapcanvasApiKey:
     localConfig?.tapcanvasApiKey ??
     envConfig.tapcanvasApiKey ??
+    envConfig.NOMI_API_KEY ??
     envConfig.TAPCANVAS_API_KEY,
   tapcanvasAuthorization:
     localConfig?.tapcanvasAuthorization ??

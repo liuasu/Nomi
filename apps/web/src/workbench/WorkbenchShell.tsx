@@ -14,6 +14,8 @@ type WorkbenchShellProps = {
   generationAiLayout?: 'sidebar' | 'overlay'
   onBackToLibrary?: () => void
   onOpenModelCatalog?: () => void
+  projectName?: string
+  onRenameProject?: (name: string) => void
 }
 
 const STEP_PARAM_BY_MODE: Record<WorkspaceMode, string> = {
@@ -49,7 +51,7 @@ function writeWorkspaceModeToUrl(mode: WorkspaceMode): void {
   window.history.replaceState(null, '', url.toString())
 }
 
-export default function WorkbenchShell({ generation, generationAi, generationAiLayout = 'sidebar', onBackToLibrary, onOpenModelCatalog }: WorkbenchShellProps): JSX.Element {
+export default function WorkbenchShell({ generation, generationAi, generationAiLayout = 'sidebar', onBackToLibrary, onOpenModelCatalog, projectName, onRenameProject }: WorkbenchShellProps): JSX.Element {
   const workspaceMode = useWorkbenchStore((state) => state.workspaceMode)
   const setWorkspaceMode = useWorkbenchStore((state) => state.setWorkspaceMode)
 
@@ -78,6 +80,8 @@ export default function WorkbenchShell({ generation, generationAi, generationAiL
         onWorkspaceModeChange={handleWorkspaceModeChange}
         onBackToLibrary={onBackToLibrary}
         onOpenModelCatalog={onOpenModelCatalog}
+        projectName={projectName}
+        onRenameProject={onRenameProject}
       />
 
       <main className="workbench-shell__body">

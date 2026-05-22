@@ -7,6 +7,7 @@ import StatsModelCatalogManagement from '../ui/stats/system/modelCatalog/StatsMo
 import {
   createLocalProject,
   listLocalProjects,
+  renameLocalProject,
   type LocalProjectSummary,
 } from './library/localProjectStore'
 import { createWorkbenchProjectPersistenceService } from './project/projectPersistenceService'
@@ -127,6 +128,13 @@ export default function NomiStudioApp(): JSX.Element {
     }
   })
 
+  const handleRenameProject = React.useCallback((newName: string) => {
+    if (!activeProject?.id) return
+    renameLocalProject(activeProject.id, newName)
+    setActiveProject((prev) => prev ? { ...prev, name: newName } : prev)
+    refreshProjects()
+  }, [activeProject?.id, refreshProjects])
+
   const backToLibrary = React.useCallback(() => {
     refreshProjects()
     setView('library')
@@ -139,6 +147,7 @@ export default function NomiStudioApp(): JSX.Element {
           projects={projects}
           onOpenProject={openProject}
           onNewProject={() => void newProject()}
+          onProjectsChanged={refreshProjects}
         />
         <ToastHost className="nomi-studio-app__toast-host" />
       </>
@@ -153,6 +162,8 @@ export default function NomiStudioApp(): JSX.Element {
         generationAi={<CanvasAssistantPanel defaultCollapsed onCollapsedChange={setGenerationAiCollapsed} />}
         onBackToLibrary={backToLibrary}
         onOpenModelCatalog={() => setModelCatalogOpened(true)}
+        projectName={activeProject?.name}
+        onRenameProject={handleRenameProject}
       />
       <DesignDrawer
         className="nomi-model-catalog-drawer"

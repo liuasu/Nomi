@@ -1,5 +1,5 @@
-const apiBase = String(process.env.TAPCANVAS_LOCAL_API_BASE || 'http://localhost:8788').trim().replace(/\/+$/, '')
-const localAuthToken = String(process.env.TAPCANVAS_LOCAL_AUTH_TOKEN || '').trim()
+const apiBase = String(process.env.NOMI_API_BASE_URL || process.env.TAPCANVAS_LOCAL_API_BASE || 'http://localhost:8788').trim().replace(/\/+$/, '')
+const localAuthToken = String(process.env.NOMI_API_KEY || process.env.TAPCANVAS_LOCAL_AUTH_TOKEN || '').trim()
 const tapNowAuthorization = String(process.env.TAPNOW_AUTHORIZATION || '').trim()
 const tapNowDeviceId = String(process.env.TAPNOW_DEVICE_ID || '').trim()
 const tapNowTimezone = String(process.env.TAPNOW_TIMEZONE || 'Asia/Shanghai').trim()
@@ -12,7 +12,7 @@ function fail(message) {
   process.exit(1)
 }
 
-if (!localAuthToken) fail('missing TAPCANVAS_LOCAL_AUTH_TOKEN')
+if (!localAuthToken) fail('missing NOMI_API_KEY (or TAPCANVAS_LOCAL_AUTH_TOKEN)')
 if (!tapNowAuthorization) fail('missing TAPNOW_AUTHORIZATION')
 if (!tapNowDeviceId) fail('missing TAPNOW_DEVICE_ID')
 

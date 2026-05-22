@@ -153,7 +153,8 @@ export default function WorkbenchEditor(): JSX.Element {
     extensions: [
       StarterKit,
       Placeholder.configure({
-        placeholder: '',
+        placeholder: '从这里开始写你的故事或剧本...\n\n💡 小提示：写好内容后，选中文字点「生成图片」或「生成视频」，就会自动在右边的画布生成对应节点。',
+        emptyEditorClass: 'is-editor-empty',
       }),
     ],
     content: isJSONContent(workbenchDocument.contentJson) ? workbenchDocument.contentJson : undefined,

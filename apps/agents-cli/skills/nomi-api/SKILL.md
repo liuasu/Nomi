@@ -1,6 +1,6 @@
 ---
-name: tapcanvas-api
-description: 统一的 Nomi API skill。凡是要通过 Nomi 项目的 `/public/*` 接口完成 chat、draw、vision、video、tasks/result、flows 读写时，都必须使用这个 skill，而不是再使用分散的 tapcanvas-vision、tapcanvas-public-chat-ui-code 或其他平行 API skill。此 skill 通过同目录 `config.json` 配置 `apiBaseUrl` 和 `apiKey`，并通过脚本统一发起请求。
+name: nomi-api
+description: 统一的 Nomi API skill。凡是要通过 Nomi 项目的 `/public/*` 接口完成 chat、draw、vision、video、tasks/result、flows 读写时，都必须使用这个 skill，而不是再使用分散的旧 tapcanvas 相关或其他平行 API skill。此 skill 通过同目录 `config.json` 配置 `apiBaseUrl` 和 `apiKey`，并通过脚本统一发起请求。
 ---
 
 # Nomi API
@@ -45,7 +45,7 @@ description: 统一的 Nomi API skill。凡是要通过 Nomi 项目的 `/public/
 优先级：
 1. 脚本参数显式传入
 2. `config.json`
-3. 环境变量 `TAPCANVAS_API_BASE_URL` / `TAPCANVAS_API_KEY`
+3. 环境变量 `NOMI_API_BASE_URL` / `NOMI_API_KEY` (旧名 `TAPCANVAS_API_BASE_URL` / `TAPCANVAS_API_KEY` 仍兼容)
 
 如果最终缺少 `apiBaseUrl` 或 `apiKey`，必须直接失败。
 
@@ -54,7 +54,7 @@ description: 统一的 Nomi API skill。凡是要通过 Nomi 项目的 `/public/
 统一使用脚本：
 
 ```bash
-node apps/agents-cli/skills/tapcanvas-api/scripts/call.mjs \
+node apps/agents-cli/skills/nomi-api/scripts/call.mjs \
   --endpoint chat \
   --payload '{"vendor":"auto","prompt":"你好"}'
 ```
@@ -62,7 +62,7 @@ node apps/agents-cli/skills/tapcanvas-api/scripts/call.mjs \
 也支持 payload 文件：
 
 ```bash
-node apps/agents-cli/skills/tapcanvas-api/scripts/call.mjs \
+node apps/agents-cli/skills/nomi-api/scripts/call.mjs \
   --endpoint draw \
   --payloadFile /abs/path/request.json
 ```

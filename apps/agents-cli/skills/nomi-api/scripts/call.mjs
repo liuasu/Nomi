@@ -155,10 +155,10 @@ async function main() {
   const config = readConfig(args.config);
 
   const apiBaseUrl = normalizeBaseUrl(
-    args.apiBaseUrl || config.apiBaseUrl || process.env.TAPCANVAS_API_BASE_URL || "",
+    args.apiBaseUrl || config.apiBaseUrl || process.env.NOMI_API_BASE_URL || process.env.TAPCANVAS_API_BASE_URL || "",
   );
   const apiKey = String(
-    args.apiKey || config.apiKey || process.env.TAPCANVAS_API_KEY || "",
+    args.apiKey || config.apiKey || process.env.NOMI_API_KEY || process.env.TAPCANVAS_API_KEY || "",
   ).trim();
 
   if (!apiBaseUrl) {

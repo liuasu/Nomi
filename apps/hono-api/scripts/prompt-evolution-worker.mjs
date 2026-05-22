@@ -29,8 +29,8 @@ const cronPattern = readEnv("PROMPT_EVOLUTION_CRON", "0 0 * * *");
 const cronTz = readEnv("PROMPT_EVOLUTION_TZ", "America/Los_Angeles");
 
 const apiBase =
-	normalizeBaseUrl(readEnv("TAPCANVAS_API_INTERNAL_BASE", "")) ||
-	normalizeBaseUrl(readEnv("TAPCANVAS_API_BASE", "")) ||
+	normalizeBaseUrl(readEnv("NOMI_API_INTERNAL_BASE", "")) ||
+	normalizeBaseUrl(readEnv("NOMI_API_BASE_URL", "")) ||
 	"http://127.0.0.1:8788";
 
 const internalToken = readEnv("INTERNAL_WORKER_TOKEN", "").trim();
