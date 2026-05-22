@@ -184,6 +184,7 @@ export default function NomiAppBar({ workspaceMode, onWorkspaceModeChange, proje
             'max-[700px]:w-[30px] max-[700px]:h-[30px] max-[700px]:justify-center max-[700px]:p-0',
           )}
           aria-label="打开图片素材导入"
+          title="素材库"
           onClick={() => assetInputRef.current?.click()}
         >
           <IconPhoto size={15} stroke={1.7} />
@@ -200,6 +201,7 @@ export default function NomiAppBar({ workspaceMode, onWorkspaceModeChange, proje
             'max-[700px]:w-[30px] max-[700px]:h-[30px] max-[700px]:justify-center max-[700px]:p-0',
           )}
           aria-label="打开模型接入"
+          title="模型接入"
           onClick={handleOpenModelCatalog}
         >
           <IconPlugConnected size={15} stroke={1.7} />
@@ -216,6 +218,7 @@ export default function NomiAppBar({ workspaceMode, onWorkspaceModeChange, proje
             'max-[700px]:w-[30px] max-[700px]:h-[30px] max-[700px]:justify-center max-[700px]:p-0',
           )}
           aria-label="前往预览导出"
+          title="导出"
           onClick={() => onWorkspaceModeChange('preview')}
         >
           <IconDownload size={15} stroke={1.7} />

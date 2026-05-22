@@ -157,6 +157,7 @@ export default function TimelineClip({ clip }: TimelineClipProps): JSX.Element {
           <WorkbenchButton
             className={cn(handleClasses, 'workbench-timeline-clip__handle--left', '-left-1 rounded-l-[5px] rounded-r-none')}
             aria-label="调整片段起点"
+            title="调整片段起点"
             onPointerDown={(event) => beginResize(event, 'left')}
           />
         ) : null}
@@ -173,6 +174,7 @@ export default function TimelineClip({ clip }: TimelineClipProps): JSX.Element {
           <WorkbenchButton
             className={cn(handleClasses, 'workbench-timeline-clip__handle--right', '-right-1 rounded-l-none rounded-r-[5px]')}
             aria-label="调整片段终点"
+            title="调整片段终点"
             onPointerDown={(event) => beginResize(event, 'right')}
           />
         ) : null}
