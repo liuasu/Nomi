@@ -2,9 +2,9 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
-**Goal:** 把 Nomi 的视频导出从当前过渡型 `Canvas → MediaRecorder WebM → FFmpeg MP4` 升级为可扩展、可取消、可观测、可支持长视频/多轨/音频/Remotion 视觉层的生产级导出系统。
+**Goal:** 把 Nomi 的视频导出从当前过渡型 `Canvas → MediaRecorder WebM → FFmpeg MP4` 升级为分阶段工业化的本地桌面导出系统：P0 可商业试用、P1 真正生产可用、P2 高级创作能力。
 
-**Architecture:** 采用 `NomiRenderManifest → ExportJobManager → ExportPlanner → FFmpeg / Remotion / fallback backend`。FFmpeg 是桌面 MP4 主后端；Remotion 只作为复杂视觉/模板/字幕动效的 frame-render backend，不替代全部剪辑导出。
+**Architecture:** 采用 `NomiRenderManifest → persistent ExportJob → ExportPlanner → FFmpeg / optional Remotion / fallback backend`。FFmpeg 是桌面 MP4 主后端；Remotion 只作为复杂视觉层（模板、字幕动效、贴纸、AI overlay、React/CSS 动画）的后端，不替代普通剪辑导出。
 
 **Tech Stack:** Electron main process, React renderer, TypeScript, Vitest, native FFmpeg via `@ffmpeg-installer/ffmpeg`, optional Remotion spike via `remotion`, `@remotion/renderer`, `@remotion/bundler` after license approval.
 
@@ -55,7 +55,48 @@ npm run build:renderer
 - 不做硬件编码器选择 UI。
 - 不做手写 FFmpeg 参数输入。
 - 不做 Remotion 作为唯一导出底座。
-- 不在本阶段承诺完整多轨音频混音 UI，但 manifest 和 planner 要预留音频字段。
+- 不在 P0 承诺完整多轨音频混音 UI，但 P0 必须探测媒体 metadata、记录 `hasAudio`，并让 manifest/planner/command builder 明确支持 `preserve | mute` 的设计边界。
+
+### 1.3 工业化分级和上线门槛
+
+把本计划按三阶段执行，不再把“架构骨架”直接称为工业级完成态。
+
+#### P0：可商业试用（必须先完成，才能对外承诺稳定 MP4 导出）
+
+- Immutable manifest snapshot。
+- Job manager + progress + cancel + logs。
+- Job manifest/log/result 落盘；即使第一版只允许 one active export，也必须能在重启后看到最近 job 的 manifest、状态、错误和输出路径。
+- Atomic output：`*.partial.mp4` 成功后 rename。
+- 移除完整 WebM ArrayBuffer IPC；过渡期最多允许受控 temp/chunk input。
+- MP4/H.264/yuv420p/faststart。
+- `ffprobe`/media metadata：duration、dimensions、fps、codec、hasAudio。
+- 明确的错误分类：missing asset、bad codec/unsupported media、permission denied、disk full/no space、cancelled。
+- 5s、60s、3min、10min smoke；packaged mac arm64/x64 smoke；Windows smoke before public claim。
+
+#### P1：真正生产可用
+
+- FFmpeg filtergraph 支持 image/video 基础多轨合成：图片时长、视频 trim、缩放/裁切/黑底、层级顺序。
+- Source audio preserve / mute / AAC output。
+- 基础音频 filtergraph：delay、fade、amix；多轨 UI 可后置，但导出模型不能推翻。
+- Job recovery/readback：用户能看到最近导出失败原因和结果文件。
+- 更完整的 asset validation 和错误 copy。
+
+#### P2：高级创作能力
+
+- Remotion/headless frame render。
+- 字幕动效、贴纸、模板、AI overlay。
+- 多画幅批量导出。
+- 队列、重试、后台任务恢复。
+
+### 1.4 P0 hard gates
+
+这些 gate 不通过，不允许把功能称为“稳定长视频导出”：
+
+1. Renderer 不再通过 IPC 一次性发送完整 WebM bytes。
+2. 每个 job 至少落盘 `manifest.json`、`job.json`、`export.log`。
+3. 取消导出清理 temp input 和 partial output，不留下坏 MP4。
+4. 3 分钟 mixed image/video 导出稳定；10 分钟 smoke 不爆内存。
+5. 输出文件由 FFmpeg probe 验证尺寸、duration、pix_fmt、faststart。
 
 ---
 
@@ -69,8 +110,12 @@ electron/export/
   exportPaths.ts              # project exports/cache/temp path helpers
   exportManifest.ts           # manifest schema, validation, serialization
   exportJobManager.ts         # queue, status, events, cancel, cleanup
+  exportJobStore.ts           # persist manifest/job/log/result under project cache
+  exportTempInput.ts          # controlled chunk/temp input; no full WebM IPC
+  mediaProbe.ts               # ffprobe/FFmpeg metadata for video/audio planning
   exportPlanner.ts            # choose ffmpeg-direct/filtergraph/remotion/fallback
   ffmpegCommandBuilder.ts     # FFmpeg args by plan/profile
+  ffmpegFiltergraph.ts        # image/video/audio filtergraph compiler
   ffmpegProgress.ts           # parse -progress/stderr into percent/stage
   ffmpegRunner.ts             # spawn, cancel, logs, partial output, result
   remotion/
@@ -85,6 +130,9 @@ src/workbench/export/
   exportApi.ts                # start/cancel/subscribe bridge
   ExportDialog.tsx            # later UI; not first priority
   ExportProgressPanel.tsx     # progress/result/error/cancel UI
+
+src/workbench/timeline/
+  timelineTypes.ts            # remains thin in P0, but export capability gaps are explicit
 ```
 
 ---
@@ -183,6 +231,20 @@ export type NomiRenderManifestV1 = {
   };
   profile: ExportProfile;
   assets: Record<string, NomiRenderAsset>;
+  diagnostics?: { warnings: string[] };
+};
+
+export type NomiRenderAsset = {
+  id: string;
+  kind: 'image' | 'video' | 'audio';
+  absolutePath: string;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  hasAudio?: boolean;
 };
 ```
 
@@ -203,6 +265,8 @@ Validation rules:
 - `range.endFrame >= range.startFrame`
 - every clip `endFrame > startFrame`
 - every asset path is absolute in main process manifest
+- media assets may omit probe metadata only before `mediaProbe` runs; planner must fail clearly if required metadata is missing
+- if an asset has `hasAudio: true`, manifest preserves that fact even when current export profile chooses `audioCodec: 'none'`
 
 **Tests:**
 
@@ -211,6 +275,8 @@ Validation rules:
 - rejects empty projectId
 - rejects clip with invalid range
 - rejects relative asset path
+- accepts video asset with `hasAudio: true` metadata
+- rejects planner-required metadata when missing in production planning tests
 
 **Verification:**
 
@@ -230,7 +296,7 @@ git commit -m "feat(export): define render manifest schema"
 
 ### Task 3: Build renderer manifest snapshot from current timeline
 
-**Objective:** 把现有 `TimelineState` 转为 manifest-like request，先支持当前 image/video tracks，同时预留 transform/audio/text 字段。
+**Objective:** 把现有 `TimelineState` 转为 manifest-like request，先支持当前 image/video tracks，同时显式记录当前时间轴模型的能力缺口，不在 manifest 里假装已经有完整多轨/音频/字幕编辑模型。
 
 **Files:**
 
@@ -260,13 +326,17 @@ Rules:
 - compute duration via existing timeline math
 - profile dimensions use same dimension rules as `exportDimensionsForPreset`
 - clips preserve `startFrame`, `endFrame`, `sourceStartFrame`, `sourceEndFrame` if present
-- include `audioCodec: 'none'` for current v1
+- include `audioCodec: 'none'` for current P0 default
+- include `exportCapabilities`/diagnostics that say current editor model only has image/video clips; audio/text/overlay/effect/keyframe are not yet first-class timeline entities
+- do not create fake audio/text tracks unless source model actually contains them
 
 **Tests:**
 
 - 9:16 creates `1080x1920`
 - empty timeline creates duration 0 and validation warning
 - video clip preserves source offsets
+- diagnostics expose thin timeline model limitations
+- source assets can carry `hasAudio` once media probe data is available
 
 **Verification:**
 
@@ -284,7 +354,7 @@ git commit -m "feat(export): snapshot timeline into render manifest request"
 
 ---
 
-## 4. Milestone 2 — Safe paths and job manager
+## 4. Milestone 2 — Safe paths, persistent jobs, and P0 WebM IPC removal
 
 ### Task 4: Add export path helper module
 
@@ -343,7 +413,9 @@ git commit -m "feat(export): centralize export path safety"
 **Files:**
 
 - Create: `electron/export/exportJobManager.ts`
+- Create: `electron/export/exportJobStore.ts`
 - Create: `electron/export/exportJobManager.test.ts`
+- Create: `electron/export/exportJobStore.test.ts`
 
 **Implementation:**
 
@@ -365,9 +437,11 @@ export class ExportJobManager {
 Initial constraints:
 
 - one active export at a time; if another starts, return clear error
-- maintain in-memory jobs only for this milestone
+- in-memory state is allowed only as hot runtime cache; every job must also persist under `projectDir/cache/export-<jobId>/`
+- persist `manifest.json`, `job.json`, `export.log`, and final `result.json`/`error.json`
 - emit events on status/progress/result/error
 - cancellation sets a flag even before runner integration
+- expose readback for recent job snapshots so restart/failure review is possible
 
 **Tests:**
 
@@ -376,6 +450,8 @@ Initial constraints:
 - rejects concurrent active jobs
 - marks job cancelled
 - stores failure message
+- writes manifest/job/log/result files under the job temp dir
+- can load a persisted failed job snapshot for post-crash review
 
 **Verification:**
 
@@ -387,8 +463,8 @@ npm run build:electron
 **Commit:**
 
 ```bash
-git add electron/export/exportJobManager.ts electron/export/exportJobManager.test.ts
-git commit -m "feat(export): add export job manager"
+git add electron/export/exportJobManager.ts electron/export/exportJobStore.ts electron/export/exportJobManager.test.ts electron/export/exportJobStore.test.ts
+git commit -m "feat(export): add persistent export job manager"
 ```
 
 ---
@@ -441,11 +517,58 @@ git commit -m "feat(export): expose export job IPC"
 
 ---
 
-## 5. Milestone 3 — FFmpeg runner productionization
+### Task 6A: Remove full WebM ArrayBuffer IPC as P0 gate
+
+**Objective:** 过渡期先消除最大内存风险：不再把完整 WebM bytes 通过 IPC 传输。
+
+**Files:**
+
+- Modify: `src/workbench/export/exportApi.ts`
+- Modify: `electron/runtime.ts`
+- Modify: `electron/export/ffmpegRunner.ts`
+- Create: `electron/export/exportTempInput.ts`
+- Tests as practical.
+
+**Implementation options:**
+
+Preferred transition approach:
+
+1. Job starts and main process returns a temp input token/path under project cache.
+2. Renderer writes WebM chunks or final Blob to that temp path through controlled IPC.
+3. Main process starts FFmpeg from temp input path.
+
+IPC must not accept arbitrary paths from renderer. Use:
+
+```text
+nomi:exports:write-temp-input({ jobId, chunk })
+nomi:exports:finish-temp-input({ jobId })
+```
+
+If chunk streaming is too large for this task, accept a short-term `Blob → ArrayBuffer` only within chunked writes, not one giant export payload.
+
+**P0 gate:** This task must be completed before any claim of stable long-video export. The old `webmBytes` one-shot payload must either be deleted or hidden behind test-only/fallback code that is not used by MP4 export.
+
+**Verification:**
+
+- Export a 1 min timeline and confirm main process never receives `webmBytes` as one payload.
+- Unit test rejects writes for unknown jobId.
+- Unit test rejects writes after cancel.
+
+**Commit:**
+
+```bash
+git add src/workbench/export/exportApi.ts electron/runtime.ts electron/export/ffmpegRunner.ts electron/export/exportTempInput.ts
+git commit -m "feat(export): replace full webm ipc payload with job temp input"
+```
+
+---
+
+
+## 5. Milestone 3 — FFmpeg runner productionization and real filtergraph contract
 
 ### Task 7: Extract FFmpeg command builder
 
-**Objective:** 把 FFmpeg args 从 runner 中抽出来，支持 profile-driven output 和未来 filtergraph。
+**Objective:** 把 FFmpeg args 从 runner 中抽出来，支持 profile-driven output，并为真实 filtergraph 编译器留出明确 contract。
 
 **Files:**
 
@@ -493,6 +616,55 @@ npm run build:electron
 ```bash
 git add electron/export/ffmpegCommandBuilder.ts electron/export/ffmpegCommandBuilder.test.ts electron/export/ffmpegRunner.ts
 git commit -m "feat(export): build ffmpeg commands from export profile"
+```
+
+---
+
+### Task 7A: Define FFmpeg filtergraph compiler contract
+
+**Objective:** 把 placeholder 的 `ffmpeg-filtergraph` 变成可实施 contract，覆盖 P1 真正剪片所需的 image/video/audio 基础合成。
+
+**Files:**
+
+- Create: `electron/export/ffmpegFiltergraph.ts`
+- Create: `electron/export/ffmpegFiltergraph.test.ts`
+- Modify: `electron/export/ffmpegCommandBuilder.ts`
+
+**Implementation:**
+
+Add pure compiler functions first; runner integration can follow after tests pass.
+
+Required supported cases:
+
+- image clip duration: generate looped/still input or filter segment with explicit frame duration
+- video trim: honor `sourceStartFrame/sourceEndFrame`
+- scale/crop/pad: output exactly profile width/height with black background when needed
+- layer order: deterministic bottom-to-top track ordering
+- gaps: fill with black/silence instead of producing undefined frames
+- missing asset: fail before FFmpeg spawn with classified error
+- audio P1 contract: source preserve/mute, delay, fade, amix; implementation may initially mark multi-track audio unsupported but the types/tests must lock the intended shape
+
+**Tests:**
+
+- builds filtergraph for one image clip with 5s duration
+- builds trim/scale graph for one video clip
+- preserves layer order for two overlapping visual clips
+- emits black background for timeline gaps
+- classifies missing asset before spawn
+- has skipped/TODO test for audio delay/fade/amix contract if not implemented in P0
+
+**Verification:**
+
+```bash
+npm test -- --run electron/export/ffmpegFiltergraph.test.ts electron/export/ffmpegCommandBuilder.test.ts
+npm run build:electron
+```
+
+**Commit:**
+
+```bash
+git add electron/export/ffmpegFiltergraph.ts electron/export/ffmpegFiltergraph.test.ts electron/export/ffmpegCommandBuilder.ts electron/export/ffmpegCommandBuilder.test.ts
+git commit -m "feat(export): define ffmpeg filtergraph compiler contract"
 ```
 
 ---
@@ -610,7 +782,90 @@ git commit -m "feat(export): make ffmpeg runner cancellable and atomic"
 
 ---
 
-## 6. Milestone 4 — Planner and migration off WebM promise path
+## 6. Milestone 4 — Media probe and audio-ready FFmpeg path (P0/P1 gate)
+
+### Task 9A: Probe media metadata with ffprobe or FFmpeg
+
+**Objective:** 为音频/视频 direct planning 做资产 metadata 基础。
+
+**Files:**
+
+- Create: `electron/export/mediaProbe.ts`
+- Create: `electron/export/mediaProbe.test.ts`
+- Modify: `electron/export/exportManifest.ts`
+
+**Implementation:**
+
+Use bundled FFmpeg package if ffprobe unavailable; if adding ffprobe package is required, make it separate decision.
+
+Metadata:
+
+- durationSeconds
+- width/height
+- video codec
+- audio codec
+- hasAudio
+- sampleRate/channels if available
+
+**Verification:**
+
+```bash
+npm test -- --run electron/export/mediaProbe.test.ts
+npm run build:electron
+```
+
+**Commit:**
+
+```bash
+git add electron/export/mediaProbe.ts electron/export/mediaProbe.test.ts electron/export/exportManifest.ts
+git commit -m "feat(export): probe source media metadata"
+```
+
+---
+
+### Task 9B: Add audio fields and silent/AAC planning
+
+**Objective:** 从 manifest 到 FFmpeg command builder 预留音频路径，P0 明确支持 mute/silent，P1 支持 source audio preserve and AAC output，避免后续推翻导出设计。
+
+**Files:**
+
+- Modify: `electron/export/exportTypes.ts`
+- Modify: `electron/export/exportManifest.ts`
+- Modify: `electron/export/ffmpegCommandBuilder.ts`
+- Modify: tests.
+
+**Implementation:**
+
+Current P0 behavior may remain default `audioCodec: 'none'` and `-an`, but the model must distinguish:
+
+- `audioMode: 'mute'` → `-an`
+- `audioMode: 'preserve-source'` → P1 route, requires `hasAudio`/codec/duration metadata and emits AAC MP4 args
+- `audioMode: 'mixdown'` → P1/P2 route, requires filtergraph support
+
+Add tests proving:
+
+- when `audioMode: 'mute'`, args include `-an`
+- when `audioMode: 'preserve-source'`, command builder adds `-c:a aac -b:a 192k` and fails clearly if source has no audio metadata
+- UI can still hide audio choices in P0, but manifest/planner cannot collapse all assets to silent forever
+
+**Verification:**
+
+```bash
+npm test -- --run electron/export
+npm run build:electron
+```
+
+**Commit:**
+
+```bash
+git add electron/export/exportTypes.ts electron/export/exportManifest.ts electron/export/ffmpegCommandBuilder.ts electron/export/*.test.ts
+git commit -m "feat(export): make export profiles audio-ready"
+```
+
+
+---
+
+## 7. Milestone 5 — Planner and migration off WebM promise path
 
 ### Task 10: Add export planner skeleton
 
@@ -722,53 +977,9 @@ git commit -m "feat(export): route mp4 export through job manager"
 
 ---
 
-### Task 12: Remove full WebM ArrayBuffer IPC
+## 8. Milestone 6 — Remotion spike backend (P2; defer until P0/P1 gates pass)
 
-**Objective:** 过渡期先消除最大内存风险：不再把完整 WebM bytes 通过 IPC 传输。
-
-**Files:**
-
-- Modify: `src/workbench/export/exportApi.ts`
-- Modify: `electron/runtime.ts`
-- Modify: `electron/export/ffmpegRunner.ts`
-- Create: `electron/export/exportTempInput.ts`
-- Tests as practical.
-
-**Implementation options:**
-
-Preferred transition approach:
-
-1. Job starts and main process returns a temp input token/path under project cache.
-2. Renderer writes WebM chunks or final Blob to that temp path through controlled IPC.
-3. Main process starts FFmpeg from temp input path.
-
-IPC must not accept arbitrary paths from renderer. Use:
-
-```text
-nomi:exports:write-temp-input({ jobId, chunk })
-nomi:exports:finish-temp-input({ jobId })
-```
-
-If chunk streaming is too large for this task, accept a short-term `Blob → ArrayBuffer` only within chunked writes, not one giant export payload.
-
-**Verification:**
-
-- Export a 1 min timeline and confirm main process never receives `webmBytes` as one payload.
-- Unit test rejects writes for unknown jobId.
-- Unit test rejects writes after cancel.
-
-**Commit:**
-
-```bash
-git add src/workbench/export/exportApi.ts electron/runtime.ts electron/export/ffmpegRunner.ts electron/export/exportTempInput.ts
-git commit -m "feat(export): replace full webm ipc payload with job temp input"
-```
-
----
-
-## 7. Milestone 5 — Remotion spike backend
-
-> Do this only after license/commercial approval. Remotion is not plain MIT; company license may be required depending on Nomi's legal entity/size/use.
+> Do this only after license/commercial approval and after P0 WebM IPC removal, persistent jobs, media probe, and FFmpeg filtergraph contract are in place. Remotion is not plain MIT; company license may be required depending on Nomi's legal entity/size/use.
 
 ### Task 13: Add Remotion dependency behind spike flag
 
@@ -958,7 +1169,7 @@ git commit -m "feat(export): route visual manifests to remotion backend"
 
 ---
 
-## 8. Milestone 6 — User-facing progress, cancel, result
+## 9. Milestone 7 — User-facing progress, cancel, result
 
 ### Task 17: Add export progress panel
 
@@ -1047,81 +1258,6 @@ git commit -m "feat(export): add focused export settings dialog"
 ```
 
 ---
-
-## 9. Milestone 7 — Audio-ready FFmpeg path
-
-### Task 19: Probe media metadata with ffprobe or FFmpeg
-
-**Objective:** 为音频/视频 direct planning 做资产 metadata 基础。
-
-**Files:**
-
-- Create: `electron/export/mediaProbe.ts`
-- Create: `electron/export/mediaProbe.test.ts`
-- Modify: `electron/export/exportManifest.ts`
-
-**Implementation:**
-
-Use bundled FFmpeg package if ffprobe unavailable; if adding ffprobe package is required, make it separate decision.
-
-Metadata:
-
-- durationSeconds
-- width/height
-- video codec
-- audio codec
-- hasAudio
-- sampleRate/channels if available
-
-**Verification:**
-
-```bash
-npm test -- --run electron/export/mediaProbe.test.ts
-npm run build:electron
-```
-
-**Commit:**
-
-```bash
-git add electron/export/mediaProbe.ts electron/export/mediaProbe.test.ts electron/export/exportManifest.ts
-git commit -m "feat(export): probe source media metadata"
-```
-
----
-
-### Task 20: Add audio fields and silent/AAC planning
-
-**Objective:** 从 manifest 到 FFmpeg command builder 预留音频路径，先支持 explicit silent and future AAC.
-
-**Files:**
-
-- Modify: `electron/export/exportTypes.ts`
-- Modify: `electron/export/exportManifest.ts`
-- Modify: `electron/export/ffmpegCommandBuilder.ts`
-- Modify: tests.
-
-**Implementation:**
-
-Current behavior remains `audioCodec: 'none'` and `-an`.
-
-Add tests proving:
-
-- when `audioCodec: 'none'`, args include `-an`
-- when future `audioCodec: 'aac'`, command builder can add `-c:a aac -b:a 192k` in a skipped/placeholder test or TODO block without exposing UI yet
-
-**Verification:**
-
-```bash
-npm test -- --run electron/export
-npm run build:electron
-```
-
-**Commit:**
-
-```bash
-git add electron/export/exportTypes.ts electron/export/exportManifest.ts electron/export/ffmpegCommandBuilder.ts electron/export/*.test.ts
-git commit -m "feat(export): make export profiles audio-ready"
-```
 
 ---
 
@@ -1239,29 +1375,40 @@ ffmpeg -i "path/to/export.mp4" 2>&1 | grep -E "Video:|Duration"
 
 ## 12. Execution order summary
 
-Recommended order:
+Recommended order after feedback adjustment:
+
+### P0 — 可商业试用 gate
 
 1. `exportTypes.ts`
-2. `exportManifest.ts`
-3. renderer `renderManifest.ts`
+2. `exportManifest.ts` with asset metadata / `hasAudio` fields
+3. renderer `renderManifest.ts` with explicit thin-timeline diagnostics
 4. `exportPaths.ts`
-5. `ExportJobManager`
+5. persistent `ExportJobManager` + `exportJobStore.ts`
 6. job IPC
-7. `ffmpegCommandBuilder.ts`
-8. `ffmpegProgress.ts`
-9. cancellable/atomic `ffmpegRunner.ts`
-10. `exportPlanner.ts`
-11. route current export through jobs
-12. remove full WebM ArrayBuffer IPC
-13. Remotion dependency behind flag
-14. Remotion composition
-15. Remotion renderer wrapper
-16. planner route for Remotion-required manifests
-17. progress/cancel UI
-18. export dialog
-19. media probe
-20. audio-ready command builder
-21. acceptance fixtures
-22. QA/release checklist
+7. **remove full WebM ArrayBuffer IPC** via `exportTempInput.ts` chunk/temp input
+8. `mediaProbe.ts` for duration/dimensions/fps/codec/hasAudio
+9. `ffmpegCommandBuilder.ts` with H.264/yuv420p/faststart and mute audio mode
+10. `ffmpegProgress.ts`
+11. cancellable/atomic `ffmpegRunner.ts`
+12. `exportPlanner.ts` with classified unsupported cases
+13. route current export through jobs
+14. progress/cancel/error/result UI
+15. acceptance fixtures and 5s/60s/3min/10min smoke checklist
 
-This order deliberately builds the backbone first. Do not start with a richer ExportDialog; it would add UI on top of an unstable pipeline.
+### P1 — 真正生产可用
+
+16. `ffmpegFiltergraph.ts` real image/video composition contract and implementation
+17. audio preserve/AAC output path
+18. job recovery/readback UI for recent failed/succeeded exports
+19. richer error taxonomy and user copy
+20. export dialog presets after backend behavior is stable
+
+### P2 — 高级创作能力
+
+21. Remotion dependency behind flag after license approval
+22. Remotion composition
+23. Remotion renderer wrapper
+24. planner route for Remotion-required manifests
+25. subtitles/templates/stickers/AI overlay
+
+Do not advertise “stable long-video export” until P0 gates pass. Do not advertise “industrial/professional export” until P1 gates pass.
