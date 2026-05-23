@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { createExportTempDir, createSafeOutputPaths } from "./exportPaths";
+import { buildWebmToMp4Args } from "./ffmpegCommandBuilder";
+import type { ExportProfile } from "./exportTypes";
 
 export type FfmpegProcessResult = {
   code: number | null;
@@ -37,12 +39,6 @@ const RESOLUTION_SIZE: Record<"720p" | "1080p", { width: number; height: number 
   "1080p": { width: 1920, height: 1080 },
 };
 
-const QUALITY_CRF: Record<"small" | "standard" | "high", string> = {
-  small: "28",
-  standard: "23",
-  high: "18",
-};
-
 const ASPECT_RATIO_VALUE: Record<NonNullable<TranscodeWebmToMp4Options["aspectRatio"]>, number> = {
   "16:9": 16 / 9,
   "9:16": 9 / 16,
@@ -66,6 +62,21 @@ export function exportDimensionsForPreset(
   const ratio = ASPECT_RATIO_VALUE[aspectRatio] || ASPECT_RATIO_VALUE["16:9"];
   if (ratio >= 1) return { width: even(base * ratio), height: even(base) };
   return { width: even(base), height: even(base / ratio) };
+}
+
+function exportProfileFromLegacyOptions(options: TranscodeWebmFileToMp4Options): ExportProfile {
+  const dimensions = exportDimensionsForPreset(options.resolution || "1080p", options.aspectRatio || "16:9");
+  return {
+    preset: "publish",
+    container: "mp4",
+    videoCodec: "h264",
+    audioCodec: "none",
+    width: dimensions.width,
+    height: dimensions.height,
+    fps: Math.max(1, Math.floor(options.fps || 30)),
+    pixelFormat: "yuv420p",
+    quality: options.quality || "standard",
+  };
 }
 
 function executablePathForRuntime(candidate: string): string {
@@ -145,21 +156,12 @@ export async function transcodeWebmFileToMp4(options: TranscodeWebmFileToMp4Opti
   const outputPath = outputPaths.finalPath;
   const partialOutputPath = outputPaths.partialPath;
 
-  const resolution = exportDimensionsForPreset(options.resolution || "1080p", options.aspectRatio || "16:9");
-  const fps = Math.max(1, Math.floor(options.fps || 30));
-  const vf = `scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
-  const args = [
-    "-y",
-    "-i", inputPath,
-    "-an",
-    "-vf", vf,
-    "-r", String(fps),
-    "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", QUALITY_CRF[options.quality || "standard"],
-    "-movflags", "+faststart",
-    partialOutputPath,
-  ];
+  const args = buildWebmToMp4Args({
+    inputPath,
+    outputPath: partialOutputPath,
+    profile: exportProfileFromLegacyOptions(options),
+    noAudio: true,
+  });
 
   try {
     const runProcess = options.runProcess || defaultRunProcess;

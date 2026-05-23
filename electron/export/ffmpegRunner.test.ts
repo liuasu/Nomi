@@ -141,6 +141,33 @@ describe("transcodeWebmToMp4", () => {
     expect(fs.existsSync(path.join(projectDir, "cache", "exports"))).toBe(false);
   });
 
+  it("builds ffmpeg args from legacy options through a profile and writes to the partial output", async () => {
+    const projectDir = makeTempDir();
+    const calls: Array<{ command: string; args: string[] }> = [];
+
+    await transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      outputName: "Profile Export",
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      resolution: "720p",
+      aspectRatio: "4:5",
+      fps: 24,
+      quality: "high",
+      runProcess: async (command: string, args: string[]) => {
+        calls.push({ command, args });
+        fs.writeFileSync(args[args.length - 1], "mp4-bytes");
+        return { code: 0, stderr: "" };
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].args).toContain("scale=720:900:force_original_aspect_ratio=decrease,pad=720:900:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p");
+    expect(calls[0].args.slice(calls[0].args.indexOf("-r"), calls[0].args.indexOf("-r") + 2)).toEqual(["-r", "24"]);
+    expect(calls[0].args.slice(calls[0].args.indexOf("-crf"), calls[0].args.indexOf("-crf") + 2)).toEqual(["-crf", "18"]);
+    expect(calls[0].args[calls[0].args.length - 1]).toMatch(/\.partial\.mp4$/);
+  });
+
   it("surfaces ffmpeg stderr when conversion fails", async () => {
     const projectDir = makeTempDir();
     await expect(transcodeWebmToMp4({
