@@ -2,6 +2,7 @@ import React from 'react'
 import {
   IconCopy,
   IconCut,
+  IconPlayerPlay,
   IconTimelineEventPlus,
 } from '@tabler/icons-react'
 import { WorkbenchButton } from '../../../design'
@@ -11,6 +12,7 @@ import type { GenerationNodeKind } from '../model/generationCanvasTypes'
 import { getGenerationNodePlugin, getQuickAddGenerationNodePlugins } from '../nodes/renderRegistry'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
 import { sendStoryboardToTimeline } from '../agent/sendStoryboardToTimeline'
+import { runGenerationNodesBatch } from '../runner/generationRunController'
 
 const QUICK_ADD_NODE_ITEMS = getQuickAddGenerationNodePlugins()
 
@@ -155,6 +157,38 @@ export default function CanvasToolbar({ getInsertionPosition }: CanvasToolbarPro
         <span className="hidden">剪切</span>
       </WorkbenchButton>
       <span className={cn('w-5 h-px bg-workbench-border')} />
+      <WorkbenchButton
+        className={cn('w-8 h-8 min-h-8 p-0 border-0 rounded-nomi-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.42]')}
+        aria-label="批量生成所有选中节点"
+        title="全部生成（限并发 2，失败自动重试）"
+        data-storyboard-run-all="true"
+        disabled={selectedNodeIds.length === 0}
+        onClick={() => {
+          const ids = [...selectedNodeIds]
+          const total = ids.length
+          if (total === 0) return
+          toast(`开始批量生成 ${total} 个节点…`, 'info')
+          void runGenerationNodesBatch(ids)
+            .then((result) => {
+              const okCount = result.successes.length
+              const failCount = result.failures.length
+              if (failCount === 0) {
+                toast(`已完成 ${okCount}/${total} 个节点的生成`, 'success')
+              } else if (okCount === 0) {
+                toast(`批量生成失败：${failCount}/${total} 个节点未完成`, 'error')
+              } else {
+                toast(`已完成 ${okCount}/${total}，${failCount} 个失败 — 在画布上单独重试`, 'info')
+              }
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error && error.message ? error.message : '批量生成异常'
+              toast(message, 'error')
+            })
+        }}
+      >
+        <IconPlayerPlay size={15} />
+        <span className="hidden">全部生成</span>
+      </WorkbenchButton>
       <WorkbenchButton
         className={cn('w-8 h-8 min-h-8 p-0 border-0 rounded-nomi-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.42]')}
         aria-label="把选中节点按时序发送到时间轴"
