@@ -2,9 +2,16 @@ import { app } from "electron";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { generateText } from "ai";
+import { generateText, streamText, tool } from "ai";
+import { z } from "zod";
 import { buildAiSdkModel } from "./ai/buildAiSdkModel";
 import { transcodeWebmToMp4 } from "./export/ffmpegRunner";
+import {
+  canvasNodeKindSchema,
+  plannedEdgeSchema,
+  plannedNodeSchema,
+  type CanvasToolName,
+} from "./ai/canvasTools";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1876,5 +1883,217 @@ export async function runAgentChat(payload: unknown): Promise<unknown> {
     },
     toolCalls: [],
     artifacts: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// runAgentChatV2 — Phase B: tool-calling + real streaming
+// ---------------------------------------------------------------------------
+//
+// `runAgentChat` (v1) is kept untouched as a fallback. v2 wires the canvas
+// tools through `streamText` and surfaces token deltas + tool-call lifecycle
+// to the renderer via an injected `emit` callback. The IPC layer (electron/
+// main.ts) is responsible for forwarding those events on a per-session
+// channel and for resolving the `awaitToolConfirmation` promise once the
+// user confirms or rejects the proposed tool call.
+// ---------------------------------------------------------------------------
+
+export type AgentChatV2Event =
+  | { type: "content-delta"; delta: string }
+  | { type: "tool-call"; toolCallId: string; toolName: CanvasToolName; args: unknown }
+  | { type: "tool-result"; toolCallId: string; toolName: CanvasToolName; result: unknown }
+  | { type: "tool-error"; toolCallId: string; toolName: CanvasToolName; message: string }
+  | { type: "step-finish"; finishReason: string }
+  | { type: "finish"; finishReason: string; usage?: unknown }
+  | { type: "error"; message: string };
+
+export type AgentToolConfirmation =
+  | { ok: true; result: unknown }
+  | { ok: false; message: string };
+
+export type AgentChatV2Hooks = {
+  emit: (event: AgentChatV2Event) => void;
+  /**
+   * Called when the LLM emits a tool call. The host (renderer over IPC) must
+   * resolve with either `{ ok: true, result }` to feed the result back to
+   * the model and continue the loop, or `{ ok: false, message }` to short
+   * circuit the tool with an error result.
+   */
+  awaitToolConfirmation: (call: {
+    toolCallId: string;
+    toolName: CanvasToolName;
+    args: unknown;
+  }) => Promise<AgentToolConfirmation>;
+};
+
+function buildCanvasToolsForV2(hooks: AgentChatV2Hooks) {
+  function makeTool<TParams extends z.ZodTypeAny>(
+    toolName: CanvasToolName,
+    description: string,
+    parameters: TParams,
+  ) {
+    return tool({
+      description,
+      parameters,
+      execute: async (args: unknown, opts: { toolCallId: string }) => {
+        hooks.emit({ type: "tool-call", toolCallId: opts.toolCallId, toolName, args });
+        const confirmation = await hooks.awaitToolConfirmation({
+          toolCallId: opts.toolCallId,
+          toolName,
+          args,
+        });
+        if (!confirmation.ok) {
+          hooks.emit({
+            type: "tool-error",
+            toolCallId: opts.toolCallId,
+            toolName,
+            message: confirmation.message,
+          });
+          // Surface as a structured tool result so the LLM can gracefully stop.
+          return { ok: false as const, error: confirmation.message };
+        }
+        hooks.emit({
+          type: "tool-result",
+          toolCallId: opts.toolCallId,
+          toolName,
+          result: confirmation.result,
+        });
+        return { ok: true as const, result: confirmation.result };
+      },
+    });
+  }
+
+  return {
+    read_canvas_state: makeTool(
+      "read_canvas_state",
+      "Read the current generation canvas (nodes + edges).",
+      z.object({}),
+    ),
+    create_canvas_nodes: makeTool(
+      "create_canvas_nodes",
+      "Propose a batch of new canvas nodes for user confirmation.",
+      z.object({
+        summary: z.string(),
+        nodes: z.array(plannedNodeSchema).min(1).max(24),
+      }),
+    ),
+    connect_canvas_edges: makeTool(
+      "connect_canvas_edges",
+      "Connect nodes with reference edges (source feeds target).",
+      z.object({
+        edges: z.array(plannedEdgeSchema).min(1).max(48),
+      }),
+    ),
+    set_node_prompt: makeTool(
+      "set_node_prompt",
+      "Rewrite the prompt of an existing node.",
+      z.object({
+        nodeId: z.string().min(1),
+        prompt: z.string().min(1),
+      }),
+    ),
+    delete_canvas_nodes: makeTool(
+      "delete_canvas_nodes",
+      "Delete one or more existing canvas nodes (destructive).",
+      z.object({
+        nodeIds: z.array(z.string().min(1)).min(1).max(24),
+        // Keep a hint slot so the model can surface its rationale to the user
+        // before destructive confirmation.
+        reason: z.string().optional(),
+      }),
+    ),
+    // Silence unused-import warning for canvasNodeKindSchema by re-exporting
+    // it through the tool registry shape (it's enforced via plannedNodeSchema).
+    _kindSchema: canvasNodeKindSchema,
+  } as const;
+}
+
+export type RunAgentChatV2Payload = {
+  prompt: string;
+  displayPrompt?: string;
+  systemPrompt?: string;
+  skill?: unknown;
+  skillKey?: string;
+  skillName?: string;
+  chatContext?: unknown;
+  mode?: string;
+  temperature?: number;
+};
+
+export async function runAgentChatV2(
+  payload: RunAgentChatV2Payload,
+  hooks: AgentChatV2Hooks,
+): Promise<{ id: string; text: string; finishReason: string; usage?: unknown }> {
+  const { vendor, model, apiKey } = chooseTextModel();
+  const systemPrompt = trim(payload.systemPrompt as unknown as JsonRecord["systemPrompt"]);
+  const skillSystemPrompt = buildSkillSystemPrompt(payload as unknown as JsonRecord);
+  const userPrompt = trim(payload.prompt) || trim(payload.displayPrompt);
+
+  const systemParts = [systemPrompt, skillSystemPrompt].filter((part) => part && part.length > 0);
+  const system = systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
+
+  const providerKind: AiSdkProviderKind = vendor.providerKind || "openai-compatible";
+  const baseURL = providerKind === "anthropic"
+    ? (vendor.baseUrlHint || "").trim()
+    : endpoint(vendor, "/v1");
+
+  const languageModel = buildAiSdkModel({
+    kind: providerKind,
+    baseURL,
+    apiKey,
+    modelId: model.modelAlias || model.modelKey,
+  });
+
+  // Strip the private `_kindSchema` slot before handing to the SDK — it's only
+  // used internally to keep the import live; the SDK only expects tool
+  // descriptors.
+  const allTools = buildCanvasToolsForV2(hooks);
+  const { _kindSchema, ...tools } = allTools;
+  void _kindSchema;
+
+  const result = streamText({
+    model: languageModel,
+    ...(system ? { system } : {}),
+    messages: [{ role: "user", content: userPrompt }],
+    temperature: typeof payload.temperature === "number" ? payload.temperature : 0.7,
+    tools,
+    maxSteps: 5,
+    toolCallStreaming: true,
+    onError: ({ error }) => {
+      const message = error instanceof Error ? error.message : String(error);
+      hooks.emit({ type: "error", message });
+    },
+  });
+
+  let finalText = "";
+  let finalFinish = "unknown";
+  let finalUsage: unknown;
+
+  for await (const chunk of result.fullStream) {
+    if (chunk.type === "text-delta") {
+      finalText += chunk.textDelta;
+      hooks.emit({ type: "content-delta", delta: chunk.textDelta });
+    } else if (chunk.type === "step-finish") {
+      hooks.emit({ type: "step-finish", finishReason: chunk.finishReason });
+    } else if (chunk.type === "finish") {
+      finalFinish = chunk.finishReason;
+      finalUsage = chunk.usage;
+    } else if (chunk.type === "error") {
+      const message = chunk.error instanceof Error ? chunk.error.message : String(chunk.error);
+      hooks.emit({ type: "error", message });
+    }
+    // tool-call / tool-result events are already emitted from inside each
+    // tool's `execute` (which is where we have access to the awaited user
+    // confirmation result). We deliberately ignore the SDK's mirror events
+    // here to avoid double-emit.
+  }
+
+  hooks.emit({ type: "finish", finishReason: finalFinish, usage: finalUsage });
+
+  return {
+    id: `agent-${crypto.randomUUID()}`,
+    text: finalText,
+    finishReason: finalFinish,
+    usage: finalUsage,
   };
 }
