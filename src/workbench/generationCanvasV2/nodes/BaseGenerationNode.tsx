@@ -751,37 +751,37 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
         >
           <button
             className={cn(
-              'inline-flex items-center justify-center gap-[5px]',
-              'min-w-[34px] min-h-[34px] px-[9px] border-0 rounded-[9px]',
-              'bg-transparent text-nomi-ink-80 font-[inherit] text-[13px] leading-none cursor-pointer',
+              'inline-flex items-center justify-center gap-[7px]',
+              'min-w-0 min-h-[34px] px-[11px] border-0 rounded-[9px]',
+              'bg-transparent text-nomi-ink-80 font-[inherit] text-[13px] leading-none whitespace-nowrap cursor-pointer',
               'hover:bg-nomi-ink-05 hover:text-nomi-ink',
               'disabled:opacity-[0.45] disabled:cursor-wait',
             )}
             type="button"
-            aria-label="2×2 切图"
-            title="2×2 切图"
+            aria-label="四视图截图（2×2）"
+            title="四视图截图（2×2）"
             disabled={splittingGridSize !== null}
             onClick={() => { void handleImageGridSplit(2) }}
           >
             <IconLayoutGrid size={16} stroke={1.8} />
-            <span style={{ fontSize: 11 }}>2×2</span>
+            <span>四视图截图</span>
           </button>
           <button
             className={cn(
-              'inline-flex items-center justify-center gap-[5px]',
-              'min-w-[34px] min-h-[34px] px-[9px] border-0 rounded-[9px]',
-              'bg-transparent text-nomi-ink-80 font-[inherit] text-[13px] leading-none cursor-pointer',
+              'inline-flex items-center justify-center gap-[7px]',
+              'min-w-0 min-h-[34px] px-[11px] border-0 rounded-[9px]',
+              'bg-transparent text-nomi-ink-80 font-[inherit] text-[13px] leading-none whitespace-nowrap cursor-pointer',
               'hover:bg-nomi-ink-05 hover:text-nomi-ink',
               'disabled:opacity-[0.45] disabled:cursor-wait',
             )}
             type="button"
-            aria-label="3×3 切图"
-            title="3×3 切图"
+            aria-label="九宫格截图（3×3）"
+            title="九宫格截图（3×3）"
             disabled={splittingGridSize !== null}
             onClick={() => { void handleImageGridSplit(3) }}
           >
             <IconGrid3x3 size={16} stroke={1.8} />
-            <span style={{ fontSize: 11 }}>3×3</span>
+            <span>九宫格截图</span>
           </button>
         </div>
       ) : null}
