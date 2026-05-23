@@ -69,7 +69,9 @@
     "files": [
       "dist/**",
       "dist-electron/**",
-      "public/**"
+      "public/**",
+      "build/icon.png",
+      "build/icon.ico"
     ],
     "mac": {
       "target": [
@@ -90,6 +92,7 @@
       "identity": null
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
