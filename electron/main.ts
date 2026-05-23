@@ -27,7 +27,11 @@ import {
   runTask,
   saveProject,
   showExportInFolder,
+  cancelExportJob,
+  getExportJobStatus,
   startTimelineMp4Export,
+  startExportJob,
+  subscribeExportJobEvents,
   testModelCatalogMapping,
   upsertModelCatalogMapping,
   upsertModelCatalogModel,
@@ -53,6 +57,7 @@ const isDev = Boolean(process.env.VITE_DEV_SERVER_URL || process.env.NOMI_DESKTO
 const devRemoteDebuggingPort = process.env.NOMI_DESKTOP_REMOTE_DEBUGGING_PORT;
 const DEV_RENDERER_LOAD_ATTEMPTS = 20;
 const DEV_RENDERER_LOAD_RETRY_MS = 500;
+const exportJobEventSubscriptions = new Map<number, () => void>();
 
 if (isDev && devRemoteDebuggingPort) {
   app.commandLine.appendSwitch("remote-debugging-port", devRemoteDebuggingPort);
@@ -184,11 +189,37 @@ function registerIpc(): void {
   ipcMain.handle("nomi:assets:import-file", (_event, payload) => importLocalFile(payload));
   ipcMain.handle("nomi:assets:list", (_event, payload) => listProjectAssets(payload));
   ipcMain.handle("nomi:exports:start", (_event, payload) => startTimelineMp4Export(payload));
+  ipcMain.handle("nomi:exports:start-job", (event, payload) => {
+    registerExportJobEventForwarding(event.sender);
+    return startExportJob(payload);
+  });
+  ipcMain.handle("nomi:exports:status", (event, jobId) => {
+    registerExportJobEventForwarding(event.sender);
+    return getExportJobStatus(jobId);
+  });
+  ipcMain.handle("nomi:exports:cancel", (event, jobId) => {
+    registerExportJobEventForwarding(event.sender);
+    return cancelExportJob(jobId);
+  });
   ipcMain.handle("nomi:exports:show-in-folder", (_event, payload) => showExportInFolder(payload));
   ipcMain.handle("nomi:tasks:run", (_event, payload) => runTask(payload));
   ipcMain.handle("nomi:tasks:result", (_event, payload) => fetchTaskResult(payload));
   ipcMain.handle("nomi:agents:chat", (_event, payload) => runAgentChat(payload));
   registerAgentChatV2Ipc();
+}
+
+function registerExportJobEventForwarding(contents: WebContents): void {
+  if (exportJobEventSubscriptions.has(contents.id)) return;
+  const unsubscribe = subscribeExportJobEvents((payload) => {
+    const target = electronWebContents.fromId(contents.id);
+    if (!target || target.isDestroyed()) return;
+    target.send("nomi:exports:event", payload);
+  });
+  exportJobEventSubscriptions.set(contents.id, unsubscribe);
+  contents.once("destroyed", () => {
+    exportJobEventSubscriptions.get(contents.id)?.();
+    exportJobEventSubscriptions.delete(contents.id);
+  });
 }
 
 // ---------------------------------------------------------------------------

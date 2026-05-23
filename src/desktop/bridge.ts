@@ -1,3 +1,5 @@
+import type { ExportJobEvent, ExportJobSnapshot } from '../../electron/export/exportJobManager'
+
 export type DesktopAssetDto = {
   id: string
   name: string
@@ -23,6 +25,18 @@ export type DesktopMp4ExportResult = {
   relativePath: string
   size: number
 }
+
+export type DesktopExportJobStartPayload = {
+  projectId: string
+  manifest: unknown
+  outputName?: string
+}
+
+export type DesktopExportJobStartResult = {
+  jobId: string
+}
+
+export type { ExportJobEvent, ExportJobSnapshot }
 
 export type DesktopBridge = {
   platform: string
@@ -57,6 +71,10 @@ export type DesktopBridge = {
   }
   exports: {
     start: (payload: DesktopMp4ExportStartPayload) => Promise<DesktopMp4ExportResult>
+    startJob: (payload: DesktopExportJobStartPayload) => Promise<DesktopExportJobStartResult>
+    status: (jobId: string) => Promise<ExportJobSnapshot>
+    cancel: (jobId: string) => Promise<{ ok: boolean }>
+    onEvent: (callback: (event: ExportJobEvent) => void) => () => void
     showInFolder: (payload: { projectId: string; relativePath: string }) => Promise<{ ok: boolean }>
   }
   tasks: {

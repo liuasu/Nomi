@@ -26,6 +26,16 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
   },
   exports: {
     start: (payload: unknown) => ipcRenderer.invoke("nomi:exports:start", payload),
+    startJob: (payload: unknown) => ipcRenderer.invoke("nomi:exports:start-job", payload),
+    status: (jobId: string) => ipcRenderer.invoke("nomi:exports:status", jobId),
+    cancel: (jobId: string) => ipcRenderer.invoke("nomi:exports:cancel", jobId),
+    onEvent: (callback: (event: unknown) => void) => {
+      const listener = (_event: unknown, payload: unknown) => callback(payload);
+      ipcRenderer.on("nomi:exports:event", listener as never);
+      return () => {
+        ipcRenderer.removeListener("nomi:exports:event", listener as never);
+      };
+    },
     showInFolder: (payload: unknown) => ipcRenderer.invoke("nomi:exports:show-in-folder", payload),
   },
   tasks: {

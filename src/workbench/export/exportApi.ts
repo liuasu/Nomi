@@ -5,6 +5,7 @@ import type { TimelineState } from '../timeline/timelineTypes'
 import type { PreviewAspectRatio } from '../workbenchTypes'
 import { createTimelineExportFilename, downloadTimelineBlob, exportTimelineToWebm } from './timelineWebmExport'
 import type { ExportQuality } from './exportTypes'
+import { buildRenderManifestRequest } from './renderManifest'
 
 export type ExportTimelineToMp4Options = {
   timeline: TimelineState
@@ -14,6 +15,32 @@ export type ExportTimelineToMp4Options = {
   resolution?: '720p' | '1080p'
   quality?: ExportQuality
   onProgress?: (progress: { status: 'preparing' | 'recording' | 'converting' | 'done'; ratio: number }) => void
+}
+
+export type StartTimelineMp4ExportJobOptions = Omit<ExportTimelineToMp4Options, 'onProgress'>
+
+export async function startTimelineMp4ExportJob(options: StartTimelineMp4ExportJobOptions): Promise<{ jobId: string }> {
+  const desktop = getDesktopBridge()
+  if (!desktop?.exports?.startJob) {
+    throw new Error('导出任务需要 Electron 桌面运行时')
+  }
+  const projectId = (options.projectId || getDesktopActiveProjectId()).trim()
+  if (!projectId) throw new Error('导出失败：缺少项目 ID')
+
+  const manifest = buildRenderManifestRequest({
+    projectId,
+    timeline: options.timeline,
+    aspectRatio: options.aspectRatio,
+    resolution: options.resolution || '1080p',
+    quality: options.quality || 'standard',
+    preset: 'publish',
+  })
+
+  return desktop.exports.startJob({
+    projectId,
+    manifest,
+    outputName: options.outputName,
+  })
 }
 
 export async function exportTimelineToMp4(options: ExportTimelineToMp4Options): Promise<DesktopMp4ExportResult> {

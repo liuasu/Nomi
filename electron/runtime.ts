@@ -6,6 +6,8 @@ import { generateText, streamText, tool } from "ai";
 import { z } from "zod";
 import { buildAiSdkModel } from "./ai/buildAiSdkModel";
 import { assertProjectExportRelativePath, ensureExportDirs } from "./export/exportPaths";
+import { ExportJobManager, type ExportJobEvent, type ExportJobSnapshot } from "./export/exportJobManager";
+import { assertValidManifest, type NomiRenderManifestV1 } from "./export/exportManifest";
 import { transcodeWebmToMp4 } from "./export/ffmpegRunner";
 import {
   canvasNodeKindSchema,
@@ -135,6 +137,12 @@ type ShowExportInFolderRequest = {
   relativePath?: string;
 };
 
+type ExportJobStartRequest = {
+  projectId?: string;
+  manifest?: unknown;
+  outputName?: string;
+};
+
 type TaskResult = {
   id: string;
   kind: ProfileKind;
@@ -155,6 +163,7 @@ const PROJECT_ROOT_ENV = "NOMI_PROJECTS_DIR";
 const CATALOG_FILE = "model-catalog.json";
 const SKILLS_ROOT_ENV = "NOMI_SKILLS_DIR";
 const taskCache = new Map<string, CachedTask>();
+const exportJobManager = new ExportJobManager();
 
 type CachedTask = {
   vendor: string;
@@ -475,6 +484,63 @@ function bufferFromExportBytes(input: TimelineMp4ExportRequest["webmBytes"]): Bu
   if (ArrayBuffer.isView(input)) return Buffer.from(input.buffer, input.byteOffset, input.byteLength);
   if (Array.isArray(input)) return Buffer.from(input);
   throw new Error("导出失败：缺少 WebM 输入数据");
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasUnresolvedRendererAssets(manifest: NomiRenderManifestV1): boolean {
+  return Object.values(manifest.assets).some((asset) => !isPlainRecord(asset) || typeof asset.absolutePath !== "string");
+}
+
+function parseExportJobManifest(value: unknown): NomiRenderManifestV1 {
+  if (isPlainRecord(value) && isPlainRecord(value.assets)) {
+    for (const asset of Object.values(value.assets)) {
+      if (isPlainRecord(asset) && ("url" in asset || "absolutePath" in asset)) {
+        throw new Error("Export job asset resolution is not wired yet; renderer assets cannot start a production export job.");
+      }
+    }
+  }
+  assertValidManifest(value);
+  if (hasUnresolvedRendererAssets(value)) {
+    throw new Error("Export job asset resolution is not wired yet; manifest assets must include absolutePath.");
+  }
+  return value;
+}
+
+export function startExportJob(payload: unknown): { jobId: string } {
+  const raw = (payload || {}) as ExportJobStartRequest;
+  const projectId = String(raw.projectId || "").trim();
+  if (!projectId) throw new Error("projectId is required");
+  const projectDir = projectDirById(projectId);
+  if (!projectDir) throw new Error("Project not found");
+  ensureProjectFolders(projectDir);
+  const manifest = parseExportJobManifest(raw.manifest);
+  if (manifest.projectId !== projectId) {
+    throw new Error("Export job projectId must match manifest.projectId");
+  }
+  const job = exportJobManager.createJob({ projectId, projectDir, manifest, outputName: raw.outputName });
+  return { jobId: job.id };
+}
+
+export function getExportJobStatus(jobId: string): ExportJobSnapshot {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required");
+  const snapshot = exportJobManager.getJob(id);
+  if (!snapshot) throw new Error(`Export job ${id} was not found`);
+  return snapshot;
+}
+
+export async function cancelExportJob(jobId: string): Promise<{ ok: true }> {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required");
+  await exportJobManager.cancelJob(id);
+  return { ok: true };
+}
+
+export function subscribeExportJobEvents(listener: (event: ExportJobEvent) => void): () => void {
+  return exportJobManager.onEvent(listener);
 }
 
 export async function startTimelineMp4Export(payload: unknown): Promise<unknown> {
