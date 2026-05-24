@@ -36,9 +36,9 @@
 
 ### 1.1 我们要交付什么
 
-**v0.6.0 — 5 个固定分类 + 用户自建子组 + 多分类挂载 + 派生标签 + Mura 视觉**
+**v0.6.0 — 5 个固定分类 + 用户自建子组 + 跨分类独立复制 + 派生标签 + Mura 视觉**
 
-让 Nomi 项目从「一张大白板上扔便利贴」升级成「带抽屉柜的工作室」：用户的角色、场景、道具能跨项目复用，画布上的资产能左右两侧（目录 + 画布）双向操作，AI 生成自动留下血缘记录。
+让 Nomi 项目从「一张大白板上扔便利贴」升级成「带抽屉柜的工作室」：用户的角色、场景、道具能在当前项目内按分类整理；拖到另一分类时创建独立副本，避免一处改动影响另一处；画布上的资产能左右两侧（目录 + 画布）双向操作，AI 生成自动留下血缘记录。
 
 ### 1.2 范围
 
@@ -47,11 +47,11 @@
 - **目录树仅在生成区显示**，创作 / 预览 step 不显示（用户最新决议）
 - 每分类独立子画布（独立 viewport + selection）
 - 用户可在每个大分类内**手动建子组/文件夹**（1 层，不嵌套）
-- 节点可挂多个分类（multi-category membership）
+- 节点**只属于一个分类**；拖到另一分类时创建独立副本（新 id），不做多分类挂载
 - 节点的 `derivedFrom` 派生元数据 + UI 角标
 - 左右双向同步（左侧目录拖入 = 右侧画布框入；反向亦然）
-- Cmd+C/V 真复制；拖到另一分类 = 多挂载
-- 删除语义：从当前分类移除；多挂载时其他分类保留
+- Cmd+C/V 真复制；拖到另一分类 = 独立复制（复制当前图片 / prompt / metadata，新 id）
+- 删除语义：删除当前节点；跨分类副本互不影响
 - 视觉照 Mura 原型（命名调整见 §2）
 - **v0.5 老节点中 categoryId 属于已废除 4 个分类（故事/风格/资源池/导出）的，直接删除**（用户最新决议 — 老 user base < 20 人，不需要兜底归档）
 
@@ -171,7 +171,7 @@ Tauri 2 的 30x 包体积优势（5MB vs 150MB）听起来诱人，但：
 #### 判断 4: 增加 dnd-kit (本 Phase 必需)
 
 Phase E.2 涉及大量拖拽：
-- 节点拖到 sidebar 另一分类 → 多分类挂载
+- 节点拖到 sidebar 另一分类 → 创建独立副本
 - sidebar 节点拖入子组文件夹 → 加组
 - canvas 组框拖动 → 整组移动
 - sidebar 文件夹拖动 → 重排顺序
@@ -258,8 +258,7 @@ type CategoryId = 'shots' | 'cast' | 'scene' | 'prop' | 'audio'  // 5 个固定
 type GenerationCanvasNode = {
   id: string
   kind: GenerationNodeKind
-  categoryIds: CategoryId[]      // ★ NEW — 多分类挂载
-  // categoryId: string          // ★ DEPRECATED — 保留 1 版兼容，下版本删
+  categoryId: CategoryId        // ★ KEEP — 单分类归属；跨分类拖拽创建独立副本，不共享数据
   groupId?: string                // ★ NEW — 节点所在组（每分类独立判断由 groups 表反向查）
                                   // 实际通过 groups[].nodeIds 反查，这里 redundancy 留 cache
   derivedFrom?: string             // ★ NEW — 派生自哪个 nodeId（只读 metadata）
@@ -282,13 +281,16 @@ type NodeGroup = {                 // ★ NEW
 
 ### 4.3 关键设计点解释
 
-#### 为什么 `categoryIds: string[]` 不是 `categoryId: string`
+#### 为什么保留 `categoryId: string`，不做 `categoryIds: string[]`
 
-多挂载需求。一张图（小苏 V1）可以挂在「角色」+「分镜」两个分类下，是同一份数据。
+用户最新决议：**一张图拖到另一个分类时，要变成独立副本，不是同一份数据多处挂载**。
 
-**查询代价**：
-- 切换到 `cast` 分类时：`nodes.filter(n => n.categoryIds.includes('cast'))` — O(n × avgCats)，1000 节点 * 平均 1.5 分类 = 1500 比较，毫秒级
-- 增加 `Map<CategoryId, Set<NodeId>>` 索引在 Zustand selector 里 → O(1) 查询
+典型例子：小苏角色卡复制到分镜分类后，角色里的小苏和分镜里的小苏是两张独立图。后续改角色卡 prompt，不应自动改分镜里的图；改分镜里的构图 prompt，也不应污染角色资产。
+
+因此节点保持单分类归属：
+- 拖到另一分类：创建新 node（新 id），复制当前 `prompt / result / history / meta` 等必要字段
+- 新副本可用 `derivedFrom = source.id` 标记来源，但只是只读血缘，不做同步
+- 查询当前分类：`nodes.filter(n => n.categoryId === activeCategoryId)`，语义简单，删除也简单
 
 #### 为什么 group 单独表而不是 `node.groupId`
 
@@ -313,7 +315,7 @@ type NodeGroup = {                 // ★ NEW
 
 **用户决议：旧节点直接删除，不兜底归档。**
 
-理由：v0.5.0 老 user base < 20 人，故事/风格/资源池/导出 4 个分类的节点本就语义不强。归档组兜底反而增加用户的清理负担。直接删，干净。
+理由：当前阶段尚无真实客户/生产数据依赖，因此**不需要为 v0.5 旧分类做向后兼容或数据保留**。这不是降低最终产品质量要求；v0.6 完成后的新项目数据模型、删除语义、持久化恢复必须稳定可靠。归档组兜底反而增加实现复杂度和用户清理负担。直接删，干净。
 
 迁移函数：
 
@@ -332,8 +334,7 @@ function migrateProjectV5ToV6(payload: ProjectPayloadV5): ProjectPayloadV6 {
     .filter(node => KEEP.has(node.categoryId))
     .map(node => ({
       ...node,
-      categoryIds: [KIND_MAP[node.categoryId]],
-      // 旧 categoryId 字段保留 1 个版本 + @deprecated tag
+      categoryId: KIND_MAP[node.categoryId],
     }))
   
   const survivingEdges = payload.generationCanvas.edges
@@ -356,12 +357,13 @@ function migrateProjectV5ToV6(payload: ProjectPayloadV5): ProjectPayloadV6 {
 }
 ```
 
-**Migration toast**：弹一次性提示
-> 项目升级到 v0.6.0。已删除旧版"故事/风格/资源池/导出"分类下的 N 个节点。如需保留请先回到 v0.5。
+**Migration toast**：弹一次性提示（仅面向开发期/内部旧项目）
+> 项目升级到 v0.6.0。已删除旧版"故事/风格/资源池/导出"分类下的 N 个节点。
 
 **用户操作路径**：
 - 用户接受 → 继续工作
-- 用户后悔 → 关闭 app，回滚 binary 到 v0.5.0，原 project.json 在 `cache/backup-pre-migration-*.json` 仍可读取（v0.5 Phase E 已建的备份机制）
+- 不提供正式用户级回滚路径；当前无真实客户，不为旧版本兼容增加产品复杂度
+- 开发/内部调试如需找回旧数据，可从 `cache/backup-pre-migration-*.json` 手动恢复（v0.5 Phase E 已建的备份机制）
 
 ---
 
@@ -399,8 +401,8 @@ useGenerationCanvasStore = {
   // — Map<GroupId, NodeId[]> — group → nodes (sorted by user order)
   
   // NEW actions
-  addNodeToCategory(nodeId, categoryId),     // multi-cat 加挂载
-  removeNodeFromCategory(nodeId, categoryId), // 多挂载移除
+  duplicateNodeToCategory(nodeId, categoryId), // 跨分类独立复制（新 id）
+  moveNodeToCategory(nodeId, categoryId),      // 可选：显式移动，不保留源分类副本
   createGroup(categoryId, name, nodeIds),    // 建组
   renameGroup(groupId, newName),
   addNodeToGroup(nodeId, groupId),
@@ -418,7 +420,7 @@ useGenerationCanvasStore = {
 function useNodesInActiveCategory() {
   const { nodes, activeCategoryId } = useWorkbenchStore()
   return useMemo(
-    () => nodes.filter(n => n.categoryIds.includes(activeCategoryId)),
+    () => nodes.filter(n => n.categoryId === activeCategoryId),
     [nodes, activeCategoryId]
   )
 }
@@ -436,24 +438,24 @@ function useNodesInActiveCategory() {
 
 #### Task E.2-1: 类型 + Zod schema 升级
 - 修改 `src/workbench/generationCanvasV2/model/generationCanvasTypes.ts`：
-  - 加 `categoryIds: CategoryId[]`
-  - 标注 `categoryId` 为 `@deprecated`，保留 1 版本
+  - 保留 `categoryId: CategoryId` 单分类字段（不引入 `categoryIds[]`）
+  - 明确跨分类拖拽创建独立副本，不做多挂载
   - 加 `derivedFrom?: string`
   - 加 `NodeGroup` 类型
   - 加 `groups: NodeGroup[]` 到 snapshot
 - 修改 `src/workbench/generationCanvasV2/model/generationCanvasSchema.ts`：
   - 同步 Zod schema 更新
-- 提交：`feat(canvas): extend schema for multi-category + groups`
+- 提交：`feat(canvas): extend schema for groups and source metadata`
 - 验收：tsc 通过 + vitest 不挂
 
 #### Task E.2-2: Migration v5 → v6
 - 新建 `src/workbench/project/projectV5ToV6Migration.ts`
 - 在 `projectPersistenceService.hydrateProject` 里调用
 - 迁移逻辑见 §4.4
-- 旧节点 `categoryId` 映射到新 `categoryIds[]`
-- 旧 8 分类（story/style/inbox/exports）转化为 5 分类下的归档组
+- 旧节点 `categoryId` 映射到新的 5 分类 `categoryId`
+- 旧 4 个废除分类（story/style/inbox/exports）下的节点**直接删除**，不做归档组、不保留兜底数据；原因是当前无真实客户，不需要兼容旧版本，而不是允许 v0.6 新数据出问题
 - 提交：`feat(project): migrate v0.5 8-category projects to v0.6 5-category + groups`
-- 验收：测试覆盖 5 类迁移路径
+- 验收：测试覆盖保留分类映射、废除分类节点过滤删除、失效 edge 清理、migration toast 计数
 
 #### Task E.2-3: Built-in categories 调整
 - 修改 `src/workbench/project/projectCategories.ts`：
@@ -486,14 +488,14 @@ function useNodesInActiveCategory() {
 - 提交：`feat(sidebar): tree view with groups and nodes`
 
 #### Task E.2-6: Sidebar 拖拽
-- 拖节点到另一个大分类 sidebar 行 → 加多分类挂载
+- 拖节点到另一个大分类 sidebar 行 → 创建独立副本（新 id），复制当前图片 / prompt / metadata，并用 `derivedFrom` 标记来源
 - 拖节点到子组文件夹 → 加入组
 - 拖节点出子组 → 离开组
 - 拖子组到大分类内重排 → 改顺序
 - 提交：`feat(sidebar): drag-and-drop for cross-category + group membership`
 
 #### Task E.2-7: Sidebar 右键菜单
-- 节点行右键："复制 / 重命名 / 派生重新生成 / 从此分类移除 / 彻底删除"
+- 节点行右键："复制 / 重命名 / 派生重新生成 / 删除"
 - 子组行右键："重命名 / 改颜色 / 解组(保留节点) / 删除(连节点)"
 - 大分类右键："新建子组"
 - 提交：`feat(sidebar): context menus for nodes / groups / categories`
@@ -525,18 +527,18 @@ function useNodesInActiveCategory() {
 #### Task E.2-12: 复制粘贴
 - Cmd+C/V 实现：
   - 单节点：复制成新 node（新 id，position 偏移）
-  - 多节点（含可能的组）：所选范围复制
+  - 多节点（含可能的组）：所选范围复制，所有副本生成新 id
   - 组复制：组 + 成员节点都复制
-- 跨分类粘贴 = 改新 node 的 categoryIds
+- 跨分类粘贴 = 新 node 的 `categoryId` 设为目标分类；源节点不受影响
 - 提交：`feat(canvas): copy/paste nodes and groups`
 
 #### Task E.2-13: 删除策略
 - canvas / sidebar 删除按钮：
-  - 单分类 + 无组 + 无 derived children → 直接删
-  - 单分类 + 在某组 → 只移出组（不删 node）
-  - 多分类 → 从当前分类移除（多挂载保留其他）
-  - 右键 "彻底删除"：严格确认 → 真删
-- 提交：`feat(canvas): delete strategy honoring multi-category + groups`
+  - 无组 + 无 derived children → 直接删
+  - 在某组 → 默认先移出组；二次删除再删节点
+  - 跨分类复制出来的副本是独立节点，删除当前节点不影响其他分类副本
+  - 有 derived children 时提示会断开血缘引用，确认后再删
+- 提交：`feat(canvas): delete strategy for independent copies and groups`
 
 ### Wave 4: 派生标签 + 视觉 + 测试 (W4)
 
@@ -567,9 +569,9 @@ function useNodesInActiveCategory() {
 #### Task E.2-18: 单元测试 (≥ 20 个新 case)
 - migration v5→v6 测试 (8 个旧分类全覆盖)
 - groups CRUD
-- multi-category membership
+- independent cross-category copies
 - derivedFrom chain
-- delete strategy（单分类 / 多分类 / 含 children）
+- delete strategy（组内 / 独立副本 / 含 children）
 - copy/paste
 - 提交：`test(canvas): cover Phase E.2 P0 logic`
 
@@ -584,8 +586,8 @@ function useNodesInActiveCategory() {
 - 手动 / 自动跑：
   - 新建项目 → 5 分类显示
   - 生成 3 个分镜节点 → 选中 2 个 Cmd+G → 组框出现 + sidebar 文件夹出现
-  - 拖角色侧栏小苏到分镜侧栏 → 同时显示在两处
-  - 改小苏 prompt → 两处同步
+  - 拖角色侧栏小苏到分镜侧栏 → 分镜生成一张独立副本（新 id），两处都可见但互不共享
+  - 改角色小苏 prompt → 分镜副本不变；改分镜副本 prompt → 角色原图不变
   - "基于 V1 重新生成" → 新节点带 derivedFrom 角标
   - 删除组（保留节点）→ 节点散落
   - 删除组（连节点）→ 节点全删
@@ -598,10 +600,10 @@ function useNodesInActiveCategory() {
 
 | 风险 | 等级 | 对策 |
 |---|---|---|
-| 多分类挂载下"删除"语义复杂，用户搞不清 | 高 | 删除按钮 hover 显示 tooltip："从分镜移除" or "彻底删除"；多分类时有醒目角标 |
+| 跨分类复制后用户误以为仍会同步 | 中 | 拖拽完成 toast："已复制到分镜，后续改动互不影响"；副本角标显示来源但不显示同步状态 |
 | 组框拖动时性能（成员节点多）| 中 | 拖动时 batch update，结束时一次 commit |
 | sidebar 树状渲染性能（深层展开）| 中 | virtualized list (react-window)；超过 50 项启用 |
-| migration 把"故事/风格/资源池/导出"压缩到分镜 → 用户抱怨乱 | 中 | 自动建归档组兜底；提供"还原 v0.5 8 分类"应急脚本 |
+| migration 直接删除"故事/风格/资源池/导出"旧节点 → 内部/开发期旧项目数据丢失 | 低 | 已确认当前无真实客户，不为旧版本兼容增加复杂度；migration toast 明确提示删除数量；v0.6 新项目的数据正确性和持久化可靠性仍是硬要求 |
 | Cmd+C/V 与浏览器原生剪贴板冲突 | 低 | preventDefault + 自定义剪贴板格式（仅 Nomi 内） |
 | dnd-kit 学习曲线 | 低 | 官方文档详尽，引入 30 分钟上手 |
 | derivedFrom 跨项目复制时打破链路 | 低 | 复制时 derivedFrom 清空（变孤立根） |
@@ -616,7 +618,7 @@ Phase A-D (v0.4) — Agent + Tool calling + Streaming 基础
 Phase E.0 (v0.5) — 8 分类 + Cost + Provenance + 虚拟化 (P0 架构)
        ↓
 **Phase E.2 (v0.6) ← 当前**
-   5 分类 + 多挂载 + 组 + Mura 视觉
+   5 分类 + 独立跨分类复制 + 组 + Mura 视觉
        ↓
 Phase F (v0.7) — Nomi Script 结构化创作（依赖 5 分类作为派生槽位）
        ↓
@@ -627,10 +629,10 @@ Phase H+I+J (v0.9-1.0) — 中片闭环 + NLE 升级 + 长片闭环
 
 **Phase E.2 不是孤立的功能**，它是后续 3 个 Phase 的前提：
 - **F 需要它**：`@角色 小苏` 块要派生到「角色」分类下的实体卡片
-- **G 需要它**：跨分类引用是关系图谱的可视化原料
+- **G 需要它**：独立副本的 `derivedFrom` 来源关系是关系图谱的可视化原料
 - **H 需要它**：跨项目资产库的基本单元就是分类下的资产
 
-如果 E.2 设计不到位（比如不支持多分类挂载），F/G/H 都得在它之上打补丁，长期债务巨大。
+如果 E.2 设计不到位（比如跨分类复制语义不清、误做成共享同步），F/G/H 都得在它之上打补丁，长期债务巨大。
 
 **所以本 Phase 工期 2 周是合理的投资**，不是"我们多花了 1 周"。
 
@@ -679,7 +681,6 @@ Phase H+I+J (v0.9-1.0) — 中片闭环 + NLE 升级 + 长片闭环
 
 | 删除 | Task | 文件 / 标识 | 删除 commit | 状态 |
 |---|---|---|---|---|
-| `categoryId` field on node（旧的单值字段） | 待 v0.7 | `GenerationCanvasNode.categoryId` | TBD | ⏸ 等下版本统一删 |
 | 旧的 8 built-in categories（story/style/inbox/exports）| E.2-3 | `projectCategories.ts` 中 4 个废除分类的定义 | TBD | ⏸ |
 | **旧项目中 4 个废除分类下的所有节点** | E.2-2 | migrate v5→v6 时直接过滤掉 | TBD | ⏸ |
 | Sidebar 在 WorkbenchShell 的挂载 | E.2-3b | `WorkbenchShell.tsx:104` `<CategorySidebar />` | TBD | ⏸ |
@@ -693,15 +694,15 @@ Phase H+I+J (v0.9-1.0) — 中片闭环 + NLE 升级 + 长片闭环
 完成所有 task + audit 后必须满足：
 
 - [ ] 新建项目：5 个固定分类（分镜/角色/场景/道具/声音）
-- [ ] 旧 v0.5 项目打开后自动迁移，无数据丢失
+- [ ] 旧 v0.5 项目打开后自动迁移：保留 shots/characters/scenes/audio 可映射节点；直接删除 story/style/inbox/exports 废除分类节点并清理失效 edges；不为旧版本兼容兜底，但 v0.6 新项目的数据模型、删除语义、重启恢复必须稳定可靠
 - [ ] 每个大分类是独立子画布（独立 viewport / selected）
 - [ ] sidebar 树状视图：大分类 → 子组 → 节点 三层
 - [ ] 用户能在大分类内手动建子组（Cmd+G 或右键）
 - [ ] canvas 上选多个节点 Cmd+G → 出现组框 + sidebar 文件夹
-- [ ] 拖节点到另一分类 sidebar → 多分类挂载
-- [ ] 改某分类下节点 → 多挂载的其他分类同步显示
+- [ ] 拖节点到另一分类 sidebar → 创建独立副本（新 id），复制图片 / prompt / metadata
+- [ ] 改源节点 prompt → 目标分类副本不变；改副本 prompt → 源节点不变
 - [ ] Cmd+C / Cmd+V 真复制
-- [ ] 删除：单分类直接删；多分类只移除当前；右键有"彻底删除"
+- [ ] 删除：删除当前节点或从组中移出；跨分类副本互不影响
 - [ ] 派生：基于 X regen 创建的新节点带 derivedFrom 角标
 - [ ] 节点 composer 内嵌（Mura 视觉）
 - [ ] 节点自动编号 "分镜 01" 等
