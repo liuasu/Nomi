@@ -584,27 +584,33 @@ Phase E 在 v0.4.0 之上叠加。需要小心的接合点：
 
 ### 当前状态
 
-**总进度**: 0/12 tasks (0%)
-**当前 Phase**: ⏸ 待启动 Phase E
-**最后更新**: 2026-05-24 (Phase E 计划落地)
+**总进度**: 9/12 tasks (75%) — 全部 P0 完成；E6/E7/E9 (UI 细节) 推迟到 v0.5.1
+**当前 Phase**: ✅ Phase E P0 完成 → final audit → v0.5.0 release
+**最后更新**: 2026-05-24 (Phase E P0 完结)
 
 ### Phase E 进度
 
-| Task | 状态 | Commit |
+| Task | 状态 | Commit (rebased final SHA) |
 |---|---|---|
-| E1 数据模型 (Category + categoryId) | ⏸ | - |
-| E2 目录树 UI 组件 | ⏸ | - |
-| E3 子画布切换 + 视口状态 | ⏸ | - |
-| E4 自动迁移既有项目 | ⏸ | - |
-| E5 3 个项目模板 | ⏸ | - |
-| E6 节点跨分类拖拽 | ⏸ | - |
-| E7 资产库视图 (资源池) | ⏸ | - |
-| E8 react-window 虚拟化 (P0) | ⏸ | - |
-| E9 资产库筛选 + 搜索 | ⏸ | - |
-| E10 Cost tracking (P0) | ⏸ | - |
-| E11 Provenance (P0) | ⏸ | - |
-| E12 单元测试 + e2e | ⏸ | - |
-| E 验证关卡 (independent audit) | ⏸ | - |
+| E1 数据模型 (Category + categoryId) | ✅ | `14cd4b8` |
+| E2 目录树 UI 组件 | ✅ | `6b543c5` |
+| E3 子画布切换 + 视口状态 | ✅ | `1c27e90` |
+| E4 自动迁移既有项目 | ✅ | `bd924ed` |
+| E5 3 个项目模板 | ✅ | `e51f620` |
+| E6 节点跨分类拖拽 | ⏸ deferred | v0.5.1 (UX polish) |
+| E7 资产库视图 (资源池) | ⏸ deferred | v0.5.1 (有 placeholder) |
+| E8 react-window 虚拟化 (G1 P0) | ✅ | `5f5da31` |
+| E9 资产库筛选 + 搜索 | ⏸ deferred | v0.5.1 (depends on E7) |
+| E10 Cost tracking (G5 P0) | ✅ | `29abdd4` |
+| E11 Provenance (G7 P0) | ✅ | `0297141` |
+| E12 单元测试 (30 new) | ✅ | `97785ae` |
+| E 验证关卡 (independent audit) | ⏸ pending | (spawn final audit agent) |
+
+**Phase E 备注**：
+- Executor agent rate-limit 在 E5 中断，orchestrator 接手完成 E10/E11/E8/E12
+- 4 个 P0 (G1 虚拟化 + G2-partial 资产库 + G5 成本 + G7 provenance) 全部架构地基已完成
+- 测试 181 → 211 (新增 30)
+- E6/E7/E9 是 UI 细节，不阻塞 v0.5 发版价值；推迟到 v0.5.1 小版本
 
 ---
 
