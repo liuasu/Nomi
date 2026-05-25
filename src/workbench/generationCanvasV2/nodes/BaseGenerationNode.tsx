@@ -532,6 +532,30 @@ export default function BaseGenerationNode({ node, selected, readOnly = false, f
   const canSendToTimeline = canDragGenerationNodeToTimeline(node, { readOnly })
   const showStatusBadge = status === 'queued' || status === 'running' || status === 'error'
   const composerLayout = floatingComposerLayout(visualSize.width, visualSize.height, node.kind)
+  // E.2C-28 placeholder label：live 计算 shots 节点的编号（与 TitlePill 算法一致），
+  // 用于占位态文案 "分镜 NN" / "等待生成"
+  const liveShotIndexForPlaceholder = useGenerationCanvasStore((state) => {
+    if (node.categoryId !== 'shots') return null
+    const shots = state.nodes
+      .filter((n) => n.categoryId === 'shots')
+      .sort((a, b) => {
+        const ay = a.position?.y ?? 0
+        const by = b.position?.y ?? 0
+        if (ay !== by) return ay - by
+        return a.id.localeCompare(b.id)
+      })
+    const idx = shots.findIndex((n) => n.id === node.id)
+    return idx >= 0 ? idx + 1 : null
+  })
+  const placeholderCategoryName = node.categoryId
+    ? getBuiltinCategoryById(node.categoryId)?.name
+    : null
+  const placeholderLabel = placeholderCategoryName
+    ? node.categoryId === 'shots' && typeof liveShotIndexForPlaceholder === 'number'
+      ? `${placeholderCategoryName} ${String(liveShotIndexForPlaceholder).padStart(2, '0')}`
+      : placeholderCategoryName
+    : null
+
   const sourceNodeLabel = sourceNode?.title || sourceNode?.id || (node.derivedFrom ? '源节点已不在当前项目' : '')
   // E.2C-25 副本角标文案：跨分类独立副本显示 "📋 独立副本（来自 [分类]·[名]）"
   const sourceCategoryName = sourceNode?.categoryId
@@ -975,8 +999,20 @@ export default function BaseGenerationNode({ node, selected, readOnly = false, f
             />
           )
         ) : (
-          <div className={cn('flex w-full h-full items-center justify-center flex-col gap-1 text-nomi-ink-60')}>
-            {selected ? null : <span style={{ fontSize: 11, opacity: 0.45, pointerEvents: 'none' }}>点击节点填写提示词</span>}
+          // E.2C-28 占位态：分类名 + 编号（live 计算） + "等待生成"
+          // 背景斜条纹已在外层 preview div 的 className 里。
+          // 选中时隐藏文字让用户专注于 composer。
+          <div className={cn('flex w-full h-full items-center justify-center flex-col gap-1.5 pointer-events-none')}>
+            {selected ? null : (
+              <>
+                {placeholderLabel ? (
+                  <span className="text-[13px] font-medium text-nomi-ink-60 tabular-nums">
+                    {placeholderLabel}
+                  </span>
+                ) : null}
+                <span className="text-[11px] text-nomi-ink-40">等待生成</span>
+              </>
+            )}
           </div>
         )}
       </div>

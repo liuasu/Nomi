@@ -862,7 +862,7 @@ export const iconsByName = {
 
 ## 10. 进度跟踪
 
-**有效进度**: 10 / 18 tasks (56%)（W2 5 个分离组件 over-engineered，简化合并；W0 升级 → E.3）
+**有效进度**: 11 / 18 tasks (61%)（W2 5 个分离组件 over-engineered，简化合并；W0 升级 → E.3）
 **当前 Wave**: 🚧 W3 进行中
 **最后更新**: 2026-05-25
 
@@ -895,7 +895,7 @@ export const iconsByName = {
 | W3 | E.2C-25 | 副本角标新文案 | ✓ | pending |
 | W3 | E.2C-26 | 撤销 toast | ⏸ | - |
 | W3 | E.2C-27 | 自动编号 | ✓ | pending |
-| W3 | E.2C-28 | 占位态视觉 | ⏸ | - |
+| W3 | E.2C-28 | 占位态视觉 | ✓ | pending |
 | W4 | E.2C-29 | Sidebar 挂载下沉 | ⏸ | - |
 | W4 | E.2C-30 | GroupFrame 抽离 | ⏸ | - |
 | W5 | E.2C-31 | 单元测试补全 | ⏸ | - |
