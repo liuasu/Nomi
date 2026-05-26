@@ -119,10 +119,36 @@ export async function runGenerationNode(
     await persistActiveWorkbenchProjectNow().catch(() => {})
     return result
   } catch (error: unknown) {
-    const message = error instanceof Error && error.message ? error.message : '生成失败'
-    useGenerationCanvasStore.getState().setNodeStatus(id, 'error', message)
+    const rawMessage = error instanceof Error && error.message ? error.message : '生成失败'
+    // v0.7.5: 错误信息友好化 — 给常见 API 错误加 hint
+    const friendlyMessage = enrichGenerationError(rawMessage)
+    useGenerationCanvasStore.getState().setNodeStatus(id, 'error', friendlyMessage)
     throw error
   }
+}
+
+/**
+ * 把底层 API 错误转成用户能行动的文案。
+ * 常见情况：API key 缺失/无效、模型未配置、配额耗尽、网络问题、超时。
+ */
+function enrichGenerationError(message: string): string {
+  const lower = message.toLowerCase()
+  if (lower.includes('api key') || lower.includes('apikey') || lower.includes('unauthorized') || lower.includes('401')) {
+    return `${message}\n→ 请在「模型接入」页检查 API Key`
+  }
+  if (lower.includes('quota') || lower.includes('rate limit') || lower.includes('429') || lower.includes('insufficient')) {
+    return `${message}\n→ 服务商配额或限流，请稍后重试或更换模型`
+  }
+  if (lower.includes('timeout') || lower.includes('etimedout') || lower.includes('econnreset') || lower.includes('network')) {
+    return `${message}\n→ 网络问题，请检查网络后重试`
+  }
+  if (lower.includes('model') && (lower.includes('not found') || lower.includes('未找到') || lower.includes('not configured'))) {
+    return `${message}\n→ 模型未配置，请去「模型接入」页设置`
+  }
+  if (lower.includes('content') && (lower.includes('policy') || lower.includes('safety') || lower.includes('filter'))) {
+    return `${message}\n→ 提示词被安全策略拦截，请修改后重试`
+  }
+  return message
 }
 
 export type RunGenerationNodesBatchOptions = RunGenerationNodeOptions & {

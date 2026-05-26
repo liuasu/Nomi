@@ -1,7 +1,7 @@
 import React from 'react'
 import { cn } from '../../../utils/cn'
 import { getBuiltinCategoryById } from '../../project/projectCategories'
-import { useGenerationCanvasStore } from '../store/generationCanvasStore'
+import { useShotIndex } from '../hooks/useNodeRelationships'
 import type { GenerationCanvasNode } from '../model/generationCanvasTypes'
 
 type Props = {
@@ -12,27 +12,10 @@ type Props = {
  * Mura 设计标题 pill（spec §6.1）：
  * 深色圆角胶囊，浮在节点左上角，显示分类名 + 自动编号（仅 shots）。
  *
- * 编号算法（E.2C-27 / spec §6.4）：
- * 在 shots 分类内，按 position.y 升序（同 y 时按 id 字典序）排列，
- * 编号 1..N，零填充 2 位。拖动后实时重算。
- * 节点持久化字段 node.shotIndex 由 migration 写入（缓存用），
- * 但 UI 始终以 live 计算为准，避免新建/拖动后过期。
+ * v0.7.5 perf: 改用 useShotIndex（WeakMap 缓存），消除每个 TitlePill 各自 O(n log n) filter+sort。
  */
-export default function TitlePill({ node }: Props): JSX.Element | null {
-  // E.2C-27: live 计算 shotIndex，避免依赖可能过期的持久化字段
-  const liveShotIndex = useGenerationCanvasStore((state) => {
-    if (node.categoryId !== 'shots') return null
-    const shots = state.nodes
-      .filter((n) => n.categoryId === 'shots')
-      .sort((a, b) => {
-        const ay = a.position?.y ?? 0
-        const by = b.position?.y ?? 0
-        if (ay !== by) return ay - by
-        return a.id.localeCompare(b.id)
-      })
-    const idx = shots.findIndex((n) => n.id === node.id)
-    return idx >= 0 ? idx + 1 : null
-  })
+function TitlePillImpl({ node }: Props): JSX.Element | null {
+  const liveShotIndex = useShotIndex(node.id, node.categoryId)
 
   const category = node.categoryId ? getBuiltinCategoryById(node.categoryId) : null
   const categoryName = category?.name
@@ -66,3 +49,7 @@ export default function TitlePill({ node }: Props): JSX.Element | null {
     </span>
   )
 }
+
+const TitlePill = React.memo(TitlePillImpl, (prev, next) => prev.node === next.node)
+TitlePill.displayName = 'TitlePill'
+export default TitlePill

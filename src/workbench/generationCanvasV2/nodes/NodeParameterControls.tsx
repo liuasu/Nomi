@@ -797,26 +797,47 @@ export default function NodeParameterControls({
             'text-ellipsis whitespace-nowrap',
             valueOnly && 'sr-only',
           )}>模型</span>
-          <select
-            className={cn(
-              'w-full min-w-0 h-6 pl-[7px] pr-[22px]',
-              'border border-nomi-line-soft rounded-[6px] outline-0',
-              'bg-nomi-ink-05 text-nomi-ink-80 font-[inherit] text-[10.5px]',
-              'focus:border-nomi-accent focus:bg-nomi-paper',
-              valueOnly && 'h-[30px] border-0 bg-nomi-ink-05 text-[11.5px] font-semibold',
-            )}
-            aria-label="模型"
-            value={modelOptions.length > 0 ? selectedModelOption?.value || '' : ''}
-            disabled={modelOptions.length === 0}
-            onChange={(event) => handleModelChange(event.target.value)}
-          >
-            <option value="">{modelOptions.length === 0 ? modelCatalogStatus.message : '选择模型'}</option>
-            {modelOptions.length > 0
-              ? modelOptions.map((option) => (
+          {modelOptions.length === 0 ? (
+            // v0.7.5: 没模型时显示明显的 "去配置 →" 按钮，不再只显示灰色文本
+            <button
+              type="button"
+              className={cn(
+                'w-full min-w-0 h-6 pl-[7px] pr-[7px] inline-flex items-center justify-between gap-1',
+                'border border-nomi-accent/30 rounded-[6px]',
+                'bg-nomi-accent-soft text-nomi-accent font-medium text-[10.5px]',
+                'hover:bg-nomi-accent hover:text-nomi-paper transition-colors cursor-pointer',
+                valueOnly && 'h-[30px] text-[11.5px]',
+              )}
+              aria-label="去配置模型"
+              title="点击打开模型接入页"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                window.dispatchEvent(new CustomEvent('nomi-open-model-catalog'))
+              }}
+            >
+              <span className="truncate">{modelCatalogStatus.message}</span>
+              <span className="shrink-0">去配置 →</span>
+            </button>
+          ) : (
+            <select
+              className={cn(
+                'w-full min-w-0 h-6 pl-[7px] pr-[22px]',
+                'border border-nomi-line-soft rounded-[6px] outline-0',
+                'bg-nomi-ink-05 text-nomi-ink-80 font-[inherit] text-[10.5px]',
+                'focus:border-nomi-accent focus:bg-nomi-paper',
+                valueOnly && 'h-[30px] border-0 bg-nomi-ink-05 text-[11.5px] font-semibold',
+              )}
+              aria-label="模型"
+              value={selectedModelOption?.value || ''}
+              onChange={(event) => handleModelChange(event.target.value)}
+            >
+              <option value="">选择模型</option>
+              {modelOptions.map((option) => (
                 <option key={option.value || 'auto'} value={option.value}>{option.label}</option>
-              ))
-              : null}
-          </select>
+              ))}
+            </select>
+          )}
         </label>
       ) : null}
 

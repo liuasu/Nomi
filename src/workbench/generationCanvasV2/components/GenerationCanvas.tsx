@@ -550,6 +550,12 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
         handleGroupSelectedNodes()
         return
       }
+      // v0.7.5: Cmd+A 全选当前分类
+      if (key === 'a') {
+        event.preventDefault()
+        useGenerationCanvasStore.getState().selectAllNodes(activeCategoryId)
+        return
+      }
       if (key === 'c') {
         event.preventDefault()
         copySelectedNodes()

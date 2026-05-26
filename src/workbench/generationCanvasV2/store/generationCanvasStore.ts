@@ -93,6 +93,7 @@ type GenerationCanvasState = {
   redo: () => void
   selectNode: (nodeId: string, additive?: boolean) => void
   clearSelection: () => void
+  selectAllNodes: (categoryId?: string) => void
   startConnection: (nodeId: string) => void
   cancelConnection: () => void
   connectToNode: (targetNodeId: string) => void
@@ -622,6 +623,15 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
   },
   clearSelection: () => {
     set({ selectedNodeIds: [], pendingConnectionSourceId: '' })
+  },
+  // v0.7.5: 全选当前分类的所有节点（如果传 categoryId 则限定，否则全选画布所有节点）
+  selectAllNodes: (categoryId?: string) => {
+    set((state) => {
+      const ids = state.nodes
+        .filter((n) => !categoryId || (n.categoryId || 'shots') === categoryId)
+        .map((n) => n.id)
+      state.selectedNodeIds = ids
+    })
   },
   startConnection: (nodeId) => {
     set({ pendingConnectionSourceId: nodeId })
