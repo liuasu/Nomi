@@ -23,6 +23,8 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
   const setTimelinePlayhead = useWorkbenchStore((state) => state.setTimelinePlayhead)
   const clipsRef = React.useRef<HTMLDivElement | null>(null)
   const [dragPreview, setDragPreview] = React.useState<TimelineDropPreview | null>(null)
+  // v0.7.4: dragenter/over 期间无法 getData → 用单独的 hover state 提供视觉反馈
+  const [isDragHovering, setIsDragHovering] = React.useState(false)
 
   const resolveFrame = React.useCallback((clientX: number) => {
     const rect = clipsRef.current?.getBoundingClientRect()
@@ -103,6 +105,8 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
           'bg-[var(--nomi-ink-05)] transition-[background,box-shadow] duration-[140ms] ease-in-out',
           dragPreview && dragPreview.canPlace && 'bg-[var(--workbench-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-accent)_20%,transparent)]',
           dragPreview && !dragPreview.canPlace && 'bg-[var(--workbench-danger-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-danger)_28%,transparent)]',
+          // v0.7.4: drag 中没有 preview 时也给一个 hover 高亮（accent）
+          !dragPreview && isDragHovering && 'bg-[var(--workbench-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-accent)_20%,transparent)]',
         )}
         style={{
           width: 'var(--workbench-timeline-content-width, 100%)',
@@ -114,23 +118,24 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
           setTimelinePlayhead(resolveFrame(event.clientX))
         }}
         onDragEnter={(event) => {
-          const preview = resolveDropPreview(event)
-          if (!preview) return
+          if (!event.dataTransfer.types.includes(TIMELINE_GENERATION_NODE_DRAG_MIME)) return
           event.preventDefault()
-          setDragPreview(preview)
+          setIsDragHovering(true)
         }}
         onDragLeave={(event) => {
           if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return
           setDragPreview(null)
+          setIsDragHovering(false)
         }}
         onDragOver={(event) => {
-          const preview = resolveDropPreview(event)
-          if (!preview) return
+          if (!event.dataTransfer.types.includes(TIMELINE_GENERATION_NODE_DRAG_MIME)) return
           event.preventDefault()
-          setDragPreview(preview)
-          event.dataTransfer.dropEffect = preview.canPlace ? 'copy' : 'none'
+          event.dataTransfer.dropEffect = 'copy'
         }}
-        onDrop={handleDrop}
+        onDrop={(event) => {
+          setIsDragHovering(false)
+          handleDrop(event)
+        }}
       >
         {track.clips.length === 0 ? (
           <div className={cn(
