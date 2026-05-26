@@ -6,8 +6,49 @@
  * - useNodeVariantCount: 该节点的变体数（derivedFrom + regeneratedFrom 反查）
  *
  * MVP 用文本匹配；Phase G 关系图谱接入后改为精确引用计数。
+ *
+ * v0.7.2 perf: 之前每次 store 变化每张卡都跑 O(n) filter → n 张卡 × O(n) = O(n²)
+ * 现在用 WeakMap 缓存 keyed on state.nodes reference：相同 nodes 数组只 build 一次，
+ * 每张卡 O(1) Map.get 查询。zustand immer 保证未改的 nodes 引用稳定 → 缓存命中率高。
  */
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
+import type { GenerationCanvasNode } from '../model/generationCanvasTypes'
+
+// title (trimmed) → 包含该 title 的 shots 节点 id 列表
+type UsageMap = Map<string, string[]>
+const usageCache = new WeakMap<readonly GenerationCanvasNode[], UsageMap>()
+
+function buildUsageMap(nodes: readonly GenerationCanvasNode[]): UsageMap {
+  const cached = usageCache.get(nodes)
+  if (cached) return cached
+
+  // 收集所有非空 title
+  const titles: string[] = []
+  for (const node of nodes) {
+    if (node.title && node.title.trim()) {
+      titles.push(node.title.trim())
+    }
+  }
+
+  const map: UsageMap = new Map()
+  for (const t of titles) map.set(t, [])
+
+  // 扫描每个 shots 节点的 prompt，记录命中 title 的 shot id
+  for (const shot of nodes) {
+    if (shot.categoryId !== 'shots') continue
+    const prompt = typeof shot.prompt === 'string' ? shot.prompt : ''
+    if (!prompt) continue
+    for (const t of titles) {
+      if (prompt.includes(t)) {
+        const bucket = map.get(t)
+        if (bucket) bucket.push(shot.id)
+      }
+    }
+  }
+
+  usageCache.set(nodes, map)
+  return map
+}
 
 /**
  * 当前节点的"使用次数"：在所有 shots 分类节点的 prompt 中，
@@ -17,14 +58,32 @@ import { useGenerationCanvasStore } from '../store/generationCanvasStore'
  */
 export function useNodeUsageCount(nodeId: string, nodeTitle: string | undefined): number {
   return useGenerationCanvasStore((state) => {
-    if (!nodeTitle || !nodeTitle.trim()) return 0
-    return state.nodes.filter((n) =>
-      n.categoryId === 'shots' &&
-      n.id !== nodeId &&
-      typeof n.prompt === 'string' &&
-      n.prompt.includes(nodeTitle),
-    ).length
+    const title = nodeTitle ? nodeTitle.trim() : ''
+    if (!title) return 0
+    const bucket = buildUsageMap(state.nodes).get(title)
+    if (!bucket) return 0
+    let count = 0
+    for (const id of bucket) if (id !== nodeId) count++
+    return count
   })
+}
+
+// sourceId → 变体数（直接派生自该 id 的节点数）
+type VariantMap = Map<string, number>
+const variantCache = new WeakMap<readonly GenerationCanvasNode[], VariantMap>()
+
+function buildVariantMap(nodes: readonly GenerationCanvasNode[]): VariantMap {
+  const cached = variantCache.get(nodes)
+  if (cached) return cached
+  const map: VariantMap = new Map()
+  for (const node of nodes) {
+    const sourceId = node.derivedFrom || node.regeneratedFrom
+    if (sourceId) {
+      map.set(sourceId, (map.get(sourceId) || 0) + 1)
+    }
+  }
+  variantCache.set(nodes, map)
+  return map
 }
 
 /**
@@ -32,7 +91,36 @@ export function useNodeUsageCount(nodeId: string, nodeTitle: string | undefined)
  * 不递归（V1 → V2 → V3 中，对 V1 来说 variants=1 仅算 V2 不包括 V3）。
  */
 export function useNodeVariantCount(nodeId: string): number {
-  return useGenerationCanvasStore((state) =>
-    state.nodes.filter((n) => n.derivedFrom === nodeId || n.regeneratedFrom === nodeId).length,
-  )
+  return useGenerationCanvasStore((state) => buildVariantMap(state.nodes).get(nodeId) || 0)
+}
+
+// shotId → 1-based index（按 y 排序，y 相同按 id 排序）
+type ShotIndexMap = Map<string, number>
+const shotIndexCache = new WeakMap<readonly GenerationCanvasNode[], ShotIndexMap>()
+
+function buildShotIndexMap(nodes: readonly GenerationCanvasNode[]): ShotIndexMap {
+  const cached = shotIndexCache.get(nodes)
+  if (cached) return cached
+  const shots = nodes
+    .filter((n) => n.categoryId === 'shots')
+    .sort((a, b) => {
+      const ay = a.position?.y ?? 0
+      const by = b.position?.y ?? 0
+      if (ay !== by) return ay - by
+      return a.id.localeCompare(b.id)
+    })
+  const map: ShotIndexMap = new Map()
+  shots.forEach((shot, idx) => map.set(shot.id, idx + 1))
+  shotIndexCache.set(nodes, map)
+  return map
+}
+
+/**
+ * 当前 shots 节点的 1-based 编号（按位置排序）。非 shots 返回 null。
+ */
+export function useShotIndex(nodeId: string, categoryId: string | undefined): number | null {
+  return useGenerationCanvasStore((state) => {
+    if (categoryId !== 'shots') return null
+    return buildShotIndexMap(state.nodes).get(nodeId) ?? null
+  })
 }

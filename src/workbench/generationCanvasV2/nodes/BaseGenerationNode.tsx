@@ -11,6 +11,7 @@ import { cn } from '../../../utils/cn'
 import type { GenerationCanvasNode } from '../model/generationCanvasTypes'
 import { useWorkbenchStore } from '../../workbenchStore'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
+import { useShotIndex } from '../hooks/useNodeRelationships'
 import {
   encodeTimelineGenerationNodeDragPayload,
   TIMELINE_GENERATION_NODE_DRAG_MIME,
@@ -190,16 +191,30 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
   const commitPersistedChange = useGenerationCanvasStore((state) => state.commitPersistedChange)
   const moveNode = useGenerationCanvasStore((state) => state.moveNode)
   const moveSelectedNodes = useGenerationCanvasStore((state) => state.moveSelectedNodes)
-  const selectedNodeIds = useGenerationCanvasStore((state) => state.selectedNodeIds)
-  const sourceNode = useGenerationCanvasStore((state) => node.derivedFrom
-    ? state.nodes.find((candidate) => candidate.id === node.derivedFrom)
-    : undefined)
+  // v0.7.2 perf: 订阅 boolean primitive 而不是整个 selectedNodeIds 数组
+  // 之前数组引用每次变都触发所有节点 rerender；现在仅当 multi-select 状态翻转时触发
+  const isMultiSelectActive = useGenerationCanvasStore((state) => state.selectedNodeIds.length > 1)
+  // v0.7.2 perf: sourceNode 拆成两个 primitive 订阅，避免对象引用引发的伪 update
+  const sourceNodeTitle = useGenerationCanvasStore((state) => {
+    if (!node.derivedFrom) return undefined
+    return state.nodes.find((candidate) => candidate.id === node.derivedFrom)?.title
+  })
+  const sourceNodeCategoryId = useGenerationCanvasStore((state) => {
+    if (!node.derivedFrom) return undefined
+    return state.nodes.find((candidate) => candidate.id === node.derivedFrom)?.categoryId
+  })
+  const sourceNodeExists = useGenerationCanvasStore((state) => {
+    if (!node.derivedFrom) return false
+    return state.nodes.some((candidate) => candidate.id === node.derivedFrom)
+  })
   const startConnection = useGenerationCanvasStore((state) => state.startConnection)
   const connectToNode = useGenerationCanvasStore((state) => state.connectToNode)
   const addNode = useGenerationCanvasStore((state) => state.addNode)
   const updateNode = useGenerationCanvasStore((state) => state.updateNode)
   const storeConnectNodes = useGenerationCanvasStore((state) => state.connectNodes)
-  const pendingConnectionSourceId = useGenerationCanvasStore((state) => state.pendingConnectionSourceId)
+  // v0.7.2 perf: 只关心 "this node 是否是 pending source"，boolean
+  const isPendingConnectionSource = useGenerationCanvasStore((state) => state.pendingConnectionSourceId === node.id)
+  const isPendingConnectionTarget = useGenerationCanvasStore((state) => state.pendingConnectionSourceId !== '' && state.pendingConnectionSourceId !== node.id)
   const canvasZoom = useGenerationCanvasStore((state) => state.canvasZoom)
   const panoramaFullscreenRef = React.useRef<(() => void) | null>(null)
   const panoramaFourViewRef = React.useRef<(() => void) | null>(null)
@@ -295,7 +310,7 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
       y: node.position.y,
       lastDeltaX: 0,
       lastDeltaY: 0,
-      multi: selected && selectedNodeIds.length > 1,
+      multi: selected && isMultiSelectActive,
       dragging: false,
     }
     selectNode(node.id, event.shiftKey)
@@ -561,26 +576,16 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
     height: previewHeight,
   }
   const isGenerating = status === 'queued' || status === 'running'
-  const generationState = useGenerationCanvasStore.getState()
-  const canGenerate = canRunGenerationNode(node, { nodes: generationState.nodes, edges: generationState.edges }) && !isGenerating
+  // v0.7.2 perf: 用 boolean primitive 订阅 canGenerate，而不是 getState() 同步读
+  // 之前 getState() 在 render 外读，不响应 nodes/edges 变化，是个隐藏 bug
+  const canGenerate = useGenerationCanvasStore((state) =>
+    canRunGenerationNode(node, { nodes: state.nodes, edges: state.edges }),
+  ) && !isGenerating
   const canSendToTimeline = canDragGenerationNodeToTimeline(node, { readOnly })
   const showStatusBadge = status === 'queued' || status === 'running' || status === 'error'
   const composerLayout = floatingComposerLayout(visualSize.width, visualSize.height, node.kind)
-  // E.2C-28 placeholder label：live 计算 shots 节点的编号（与 TitlePill 算法一致），
-  // 用于占位态文案 "分镜 NN" / "等待生成"
-  const liveShotIndexForPlaceholder = useGenerationCanvasStore((state) => {
-    if (node.categoryId !== 'shots') return null
-    const shots = state.nodes
-      .filter((n) => n.categoryId === 'shots')
-      .sort((a, b) => {
-        const ay = a.position?.y ?? 0
-        const by = b.position?.y ?? 0
-        if (ay !== by) return ay - by
-        return a.id.localeCompare(b.id)
-      })
-    const idx = shots.findIndex((n) => n.id === node.id)
-    return idx >= 0 ? idx + 1 : null
-  })
+  // v0.7.2 perf: shots 编号走 WeakMap 缓存 hook，从 O(n log n) × 每节点每变化 → O(1) 查询
+  const liveShotIndexForPlaceholder = useShotIndex(node.id, node.categoryId)
   const placeholderCategoryName = node.categoryId
     ? getBuiltinCategoryById(node.categoryId)?.name
     : null
@@ -590,14 +595,14 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
       : placeholderCategoryName
     : null
 
-  const sourceNodeLabel = sourceNode?.title || sourceNode?.id || (node.derivedFrom ? '源节点已不在当前项目' : '')
-  // E.2C-25 副本角标文案：跨分类独立副本显示 "📋 独立副本（来自 [分类]·[名]）"
-  const sourceCategoryName = sourceNode?.categoryId
-    ? getBuiltinCategoryById(sourceNode.categoryId)?.name
+  // v0.7.2 perf: 用 primitive 订阅 sourceNodeTitle / categoryId / exists 重组 label
+  const sourceNodeLabel = sourceNodeTitle || (node.derivedFrom && !sourceNodeExists ? '源节点已不在当前项目' : (node.derivedFrom || ''))
+  const sourceCategoryName = sourceNodeCategoryId
+    ? getBuiltinCategoryById(sourceNodeCategoryId)?.name
     : null
-  const independentCopyLabel = sourceCategoryName && sourceNode
+  const independentCopyLabel = sourceCategoryName && sourceNodeExists
     ? `独立副本（来自 ${sourceCategoryName}·${sourceNodeLabel}）`
-    : sourceNode
+    : sourceNodeExists
       ? `独立副本（来自 ${sourceNodeLabel}）`
       : '独立副本（源节点已不存在）'
   const nodeExecutionKind = getGenerationNodeExecutionKind(node.kind)
@@ -750,7 +755,7 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
               'data-[active=true]:opacity-100',
             )}
             aria-label="连接到此节点"
-            data-active={pendingConnectionSourceId && pendingConnectionSourceId !== node.id ? 'true' : 'false'}
+            data-active={isPendingConnectionTarget ? 'true' : 'false'}
             onPointerDown={(event) => {
               event.stopPropagation()
             }}
@@ -770,7 +775,7 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
               'data-[active=true]:opacity-100',
             )}
             aria-label="从此节点开始连线"
-            data-active={pendingConnectionSourceId === node.id ? 'true' : 'false'}
+            data-active={isPendingConnectionSource ? 'true' : 'false'}
             onPointerDown={(event) => {
               event.preventDefault()
               event.stopPropagation()
@@ -920,9 +925,9 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
           <button
             type="button"
             className="generation-canvas-v2-node__derived-badge"
-            aria-label={sourceNode ? `定位源节点：${sourceNodeLabel}` : '源节点已不存在'}
+            aria-label={sourceNodeExists ? `定位源节点：${sourceNodeLabel}` : '源节点已不存在'}
             title={independentCopyLabel}
-            disabled={!sourceNode}
+            disabled={!sourceNodeExists}
             onClick={handleFocusSourceNode}
             onPointerDown={(event) => event.stopPropagation()}
           >

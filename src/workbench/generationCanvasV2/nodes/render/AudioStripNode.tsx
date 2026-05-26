@@ -51,7 +51,7 @@ function WaveformPlaceholder(): JSX.Element {
   )
 }
 
-export default function AudioStripNode({ node }: Props): JSX.Element {
+function AudioStripNodeImpl({ node }: Props): JSX.Element {
   const meta = readAudioMeta(node)
   const usageCount = useNodeUsageCount(node.id, node.title)
   const updateNode = useGenerationCanvasStore((state) => state.updateNode)
@@ -179,3 +179,7 @@ export default function AudioStripNode({ node }: Props): JSX.Element {
     </div>
   )
 }
+
+const AudioStripNode = React.memo(AudioStripNodeImpl, (prev, next) => prev.node === next.node)
+AudioStripNode.displayName = 'AudioStripNode'
+export default AudioStripNode

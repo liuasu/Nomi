@@ -16,7 +16,7 @@ type Props = {
   node: GenerationCanvasNode
 }
 
-export default function PropCardNode({ node }: Props): JSX.Element {
+function PropCardNodeImpl({ node }: Props): JSX.Element {
   const meta = readPropMeta(node)
   const usageCount = useNodeUsageCount(node.id, node.title)
   const updateNode = useGenerationCanvasStore((state) => state.updateNode)
@@ -62,3 +62,7 @@ export default function PropCardNode({ node }: Props): JSX.Element {
     </div>
   )
 }
+
+const PropCardNode = React.memo(PropCardNodeImpl, (prev, next) => prev.node === next.node)
+PropCardNode.displayName = 'PropCardNode'
+export default PropCardNode

@@ -16,7 +16,7 @@ type Props = {
   node: GenerationCanvasNode
 }
 
-export default function SceneCardNode({ node }: Props): JSX.Element {
+function SceneCardNodeImpl({ node }: Props): JSX.Element {
   const meta = readSceneMeta(node)
   const usageCount = useNodeUsageCount(node.id, node.title)
   const variantCount = useNodeVariantCount(node.id)
@@ -74,3 +74,7 @@ export default function SceneCardNode({ node }: Props): JSX.Element {
     </div>
   )
 }
+
+const SceneCardNode = React.memo(SceneCardNodeImpl, (prev, next) => prev.node === next.node)
+SceneCardNode.displayName = 'SceneCardNode'
+export default SceneCardNode

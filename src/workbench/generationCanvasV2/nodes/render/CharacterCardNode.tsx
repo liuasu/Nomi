@@ -20,7 +20,7 @@ type Props = {
   node: GenerationCanvasNode
 }
 
-export default function CharacterCardNode({ node }: Props): JSX.Element {
+function CharacterCardNodeImpl({ node }: Props): JSX.Element {
   const meta = readCharacterMeta(node)
   const usageCount = useNodeUsageCount(node.id, node.title)
   const variantCount = useNodeVariantCount(node.id)
@@ -80,3 +80,8 @@ export default function CharacterCardNode({ node }: Props): JSX.Element {
     </div>
   )
 }
+
+// v0.7.2 perf: memo — node 引用稳定时跳过 rerender
+const CharacterCardNode = React.memo(CharacterCardNodeImpl, (prev, next) => prev.node === next.node)
+CharacterCardNode.displayName = 'CharacterCardNode'
+export default CharacterCardNode
