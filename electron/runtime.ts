@@ -1688,6 +1688,10 @@ function authQueryParams(vendor: Vendor, apiKey: string): Record<string, string>
 function endpoint(vendor: Vendor, suffix: string): string {
   const base = String(vendor.baseUrlHint || "").trim().replace(/\/+$/, "");
   if (!base) throw new Error(`Base URL missing: ${vendor.key}`);
+  // Don't double-append: if the vendor already configured a baseUrlHint that
+  // ends in the suffix (e.g. /v1), respect it. Users routinely paste full
+  // "https://api.example.com/v1" URLs.
+  if (suffix && base.endsWith(suffix)) return base;
   return `${base}${suffix}`;
 }
 

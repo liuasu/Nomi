@@ -1055,9 +1055,13 @@ function BaseGenerationNodeImpl({ node, selected, readOnly = false, focusFlash =
             />
           )
         ) : (
-          // v0.8: 占位态只剩"等待生成"，去掉"分镜 NN"标签（用户靠位置识别）
-          <div className={cn('flex w-full h-full items-center justify-center pointer-events-none')}>
-            {selected ? null : (
+          // v0.8: 占位态。对于 video 节点（Kling 等），明确告诉用户需要首帧。
+          <div className={cn('flex w-full h-full items-center justify-center pointer-events-none px-4 text-center')}>
+            {selected ? null : nodeExecutionKind === 'video' && !canGenerate && !isGenerating ? (
+              <span className="text-[11px] text-nomi-ink-40 leading-relaxed">
+                把图片节点拖过来<br/>作为首帧
+              </span>
+            ) : (
               <span className="text-[11px] text-nomi-ink-40">等待生成</span>
             )}
           </div>
