@@ -175,8 +175,8 @@ export default function CreationAiPanel(): JSX.Element {
         },
       )
       const reply = readWorkbenchAiReplyText(response) || '（空响应：AI 没有返回文本）'
-      const parsedAction = parseCreationDocumentAction(reply) ?? undefined
-      const documentAction = parsedAction
+      // 通用问答模式是纯聊天，不把回复解析成写文档 action。
+      const documentAction = activeMode.chatOnly ? undefined : (parseCreationDocumentAction(reply) ?? undefined)
       const assistantContent = documentAction?.content || reply
       setMessages((prev) => prev.map((message) => (
         message.id === pendingId ? { ...message, content: assistantContent, documentAction } : message

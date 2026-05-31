@@ -104,7 +104,7 @@ export const useWorkbenchStore = create<WorkbenchState>()(subscribeWithSelector(
   workbenchDocument: createDefaultWorkbenchDocument(),
   creationDocumentTools: null,
   creationSelectionText: '',
-  creationAiModeId: 'story',
+  creationAiModeId: 'general',
   creationAiDraft: '',
   creationAiMessages: [],
   creationAiError: '',
