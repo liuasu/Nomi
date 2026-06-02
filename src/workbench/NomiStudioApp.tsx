@@ -2,6 +2,7 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import ProjectLibraryPage from "./library/ProjectLibraryPage";
 import { ToastHost } from "../ui/toast";
+import { FilePreviewPanel } from "./explorer/FilePreviewPanel";
 import {
     createLocalProject,
     deleteLocalProject,
@@ -454,6 +455,8 @@ export default function NomiStudioApp(): JSX.Element {
                 // zIndex={4000}
                 // withinPortal
             />
+
+            <FilePreviewPanel />
 
             <ToastHost />
         </div>

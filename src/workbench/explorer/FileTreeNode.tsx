@@ -1,7 +1,7 @@
 import React from 'react'
 import { cn } from '../../utils/cn'
 import type { WorkspaceFileNode } from '../../../electron/workspace/workspaceFileIndex'
-import { getDesktopBridge } from '../../desktop/bridge'
+import { useFilePreviewStore } from './useFilePreviewStore'
 import { WORKSPACE_FILE_DRAG_MIME, type WorkspaceFileDragPayload } from './workspaceFileDrag'
 
 type Props = {
@@ -23,6 +23,7 @@ function icon(kind: WorkspaceFileNode['kind']): string {
 export default function FileTreeNode({ node, projectId, depth = 0 }: Props): JSX.Element {
   const [expanded, setExpanded] = React.useState(depth < 2)
   const [selected, setSelected] = React.useState(false)
+  const openPreview = useFilePreviewStore((s) => s.openPreview)
   const hasChildren = node.kind === 'directory' && Boolean(node.children?.length)
   const label = node.name
 
@@ -34,11 +35,11 @@ export default function FileTreeNode({ node, projectId, depth = 0 }: Props): JSX
     setSelected(true)
   }, [node.kind])
 
-  const reveal = React.useCallback(() => {
-    if (node.kind !== 'directory') {
-      void getDesktopBridge()?.workspace?.revealFile?.({ projectId, relativePath: node.relativePath })
-    }
-  }, [node.kind, node.relativePath, projectId])
+  // Single click keeps selecting (muscle memory); preview opens on double-click or
+  // Space (QuickLook-style) so glancing at a file never hijacks ordinary clicks.
+  const preview = React.useCallback(() => {
+    if (node.kind !== 'directory') openPreview(projectId, node)
+  }, [node, projectId, openPreview])
 
   // 仅图片可拖进画布（画布创建图片节点）。文件已在项目里，拖拽只传引用，不重新导入。
   const draggable = node.kind === 'image' && Boolean(projectId)
@@ -56,7 +57,13 @@ export default function FileTreeNode({ node, projectId, depth = 0 }: Props): JSX
         draggable={draggable}
         onDragStart={handleDragStart}
         onClick={selectOrToggle}
-        onDoubleClick={reveal}
+        onDoubleClick={preview}
+        onKeyDown={(e) => {
+          if ((e.key === ' ' || e.code === 'Space') && node.kind !== 'directory') {
+            e.preventDefault()
+            preview()
+          }
+        }}
         className={cn(
           'w-full h-7 flex items-center gap-1 rounded px-1 text-left text-[12px]',
           'text-nomi-ink-60 hover:text-nomi-ink hover:bg-nomi-bg',

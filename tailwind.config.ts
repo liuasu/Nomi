@@ -113,6 +113,7 @@ export default {
       fontFamily: {
         'nomi-sans': 'var(--nomi-font-sans)',
         'nomi-display': 'var(--nomi-font-display)',
+        'nomi-mono': 'var(--nomi-font-mono)',
       },
       boxShadow: {
         'nomi-sm': 'var(--nomi-shadow-sm)',
