@@ -58,6 +58,24 @@
 
 写完用户能预读 / 反驳；执行完回填结果。
 
+## 规则 5：碰框架 / 库，先查官方文档再写（Context7 强制）
+
+> 反复出现的硬伤：AI 自己手搓一套，而不是用库的官方实现。例：手写 viewport
+> transform，而 React Flow 早就有 `screenToFlowPosition` / `zoomOnScroll` /
+> 受控 `viewport`。这种"看起来能跑、其实跟生态脱节"的代码 = bug 温床 + 维护债。
+
+**铁律**：凡是涉及第三方框架 / 库的实现或改动（React Flow、AI SDK、Mantine、
+Electron、Tiptap、Vite…），**动手写之前必须先用 `context7` 查该库的官方文档 / 推荐
+用法**，再按官方实现来写。已配置 Context7 MCP（项目级 `.mcp.json`）。
+
+流程：
+1. `resolve-library-id` 拿到库的 Context7 ID（如 React Flow → `xyflow/xyflow`）。
+2. `get-library-docs` 拉该库相关主题的官方文档（带上 topic，如 "viewport zoom"）。
+3. 对照官方推荐的 API / 模式实现；**不要凭记忆或臆测手搓**。
+4. 若官方就是没有现成能力，才允许自定义，并在注释里写明"官方无此能力，故自实现"。
+
+**不查就写 = 工作错误**，等同违反规则 1（手搓的等于引入了一套与官方并行的劣质实现）。
+
 ## 关于工作目录（目录漂移——根因 + 铁律）
 
 - 仓库根（**唯一该动的工作树**）：`/Users/aoqimin/Desktop/Nomi/.claude/worktrees/impl-v0.6.0/`
