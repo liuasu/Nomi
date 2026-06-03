@@ -1,7 +1,7 @@
 import React from 'react'
 import { IconCursorText, IconFilePlus, IconMovie, IconReplace, IconSend2 } from '@tabler/icons-react'
 import { NomiAILabel, NomiLoadingMark, WorkbenchButton, WorkbenchIconButton } from '../../design'
-import ReactMarkdown from 'react-markdown'
+import { NomiMarkdown } from '../common/NomiMarkdown'
 import { cn } from '../../utils/cn'
 import { runWorkbenchAgent, workbenchSessionKey, type ToolCallEvent } from '../ai/workbenchAgentRunner'
 import { clearWorkbenchAgentSession } from '../../api/server'
@@ -117,30 +117,6 @@ export default function CreationAiPanel(): JSX.Element {
     void resolvePending(call.toolCallId, { ok: true, result: { applied: true } })
   }, [resolvePending])
 
-  const renderMarkdown = React.useCallback((content: string) => (
-    <ReactMarkdown
-      components={{
-        p: ({ node: _node, ...props }) => <p className="workbench-creation-ai-markdown__paragraph" {...props} />,
-        ul: ({ node: _node, ...props }) => <ul className="workbench-creation-ai-markdown__list" {...props} />,
-        ol: ({ node: _node, ...props }) => <ol className="workbench-creation-ai-markdown__list" {...props} />,
-        li: ({ node: _node, ...props }) => <li className="workbench-creation-ai-markdown__list-item" {...props} />,
-        blockquote: ({ node: _node, ...props }) => <blockquote className="workbench-creation-ai-markdown__blockquote" {...props} />,
-        h1: ({ node: _node, ...props }) => <h1 className="workbench-creation-ai-markdown__heading workbench-creation-ai-markdown__heading--h1" {...props} />,
-        h2: ({ node: _node, ...props }) => <h2 className="workbench-creation-ai-markdown__heading workbench-creation-ai-markdown__heading--h2" {...props} />,
-        h3: ({ node: _node, ...props }) => <h3 className="workbench-creation-ai-markdown__heading workbench-creation-ai-markdown__heading--h3" {...props} />,
-        code: ({ node: _node, className, children, ...props }) => {
-          const isInline = !String(className || '').includes('language-')
-          return isInline
-            ? <code className="workbench-creation-ai-markdown__code workbench-creation-ai-markdown__code--inline" {...props}>{children}</code>
-            : <code className={`workbench-creation-ai-markdown__code workbench-creation-ai-markdown__code--block ${className || ''}`.trim()} {...props}>{children}</code>
-        },
-        pre: ({ node: _node, ...props }) => <pre className="workbench-creation-ai-markdown__pre" {...props} />,
-        hr: ({ node: _node, ...props }) => <hr className="workbench-creation-ai-markdown__divider" {...props} />,
-      }}
-    >
-      {content}
-    </ReactMarkdown>
-  ), [])
 
   const writeToolIcon = React.useCallback((name: WriteToolName) => {
     if (name === 'insert_at_cursor') return <IconCursorText size={13} />
@@ -324,11 +300,11 @@ export default function CreationAiPanel(): JSX.Element {
                 'p-[10px_11px] whitespace-pre-wrap',
               )}
             >
-              <div className={cn('workbench-creation-ai__message-content workbench-creation-ai-markdown', 'whitespace-normal')}>
+              <div className={cn('workbench-creation-ai__message-content', 'whitespace-normal')}>
                 {message.role === 'assistant' && message.content === '处理中...' ? (
                   <NomiLoadingMark size={15} label="处理中" />
                 ) : (
-                  renderMarkdown(message.content)
+                  <NomiMarkdown compact>{message.content}</NomiMarkdown>
                 )}
                 {message.role === 'assistant' && message.content !== '处理中...' && !message.content.startsWith('（错误）') ? (
                   <AiReplyActionButton
