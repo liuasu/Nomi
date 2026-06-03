@@ -11,7 +11,7 @@ export type GenerationNodeRenderProps<TNode = unknown> = {
 export type GenerationNodeComponent = ComponentType<
     GenerationNodeRenderProps<any>
 >;
-export type GenerationNodeExecutionKind = "image" | "video";
+export type GenerationNodeExecutionKind = "image" | "video" | "text";
 export type GenerationNodeIconKey =
     | "text"
     | "character"
@@ -64,6 +64,7 @@ export const GENERATION_NODE_PLUGINS = defineGenerationNodePlugins([
         defaultTitle: "文本",
         defaultSize: { width: 280, height: 200 },
         catalogKind: "text",
+        executionKind: "text",
         quickAdd: true,
         agentCreatable: true,
         promptPlaceholder: "输入文本内容...",

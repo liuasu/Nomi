@@ -245,6 +245,8 @@ export function canRunGenerationNode(
   if (!node) return false
   const executionKind = getGenerationNodeExecutionKind(node.kind)
   if (executionKind === 'image') return true
+  // C5: 文本节点只要选了文本模型就能生成；prompt 缺失由 buildCatalogTaskRequest 兜底报错。
+  if (executionKind === 'text') return true
   if (executionKind !== 'video') return false
   if (!('id' in node) || !node.id) return false
   const references = resolveGenerationReferences(node, context)

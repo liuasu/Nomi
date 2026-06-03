@@ -156,7 +156,47 @@ function resolveTaskKind(node: GenerationCanvasNode, references: Partial<Resolve
     const hasReference = (references.referenceImages?.length || 0) > 0
     return hasReference ? 'image_edit' : 'text_to_image'
   }
+  // C5: 文本节点走 chat（runtime 的 wantedKind=text 分支 → /v1/chat/completions）。
+  if (executionKind === 'text') return 'chat'
   throw new Error(`${node.kind} generation is not implemented yet`)
+}
+
+const TEXT_TASK_KINDS = new Set<TaskKind>(['chat', 'prompt_refine', 'image_to_prompt'])
+
+/**
+ * C5: 从 chat 任务的 raw 响应里取出模型生成的文本。runtime 文本分支直接 POST
+ * /v1/chat/completions 并把响应原样放进 raw（assets 为空），所以这里要兼容
+ * OpenAI（choices[].message.content）与 Anthropic Messages（content[].text）两种形状。
+ */
+function extractTextFromChatRaw(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return ''
+  const record = raw as Record<string, unknown>
+  const choices = record.choices
+  if (Array.isArray(choices) && choices.length) {
+    const first = choices[0] as Record<string, unknown> | undefined
+    const message = first?.message as Record<string, unknown> | undefined
+    const content = message?.content
+    if (typeof content === 'string') return content.trim()
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => (typeof part === 'string' ? part : asTrimmedString((part as Record<string, unknown>)?.text)))
+        .filter(Boolean)
+        .join('')
+        .trim()
+    }
+    const legacyText = asTrimmedString(first?.text)
+    if (legacyText) return legacyText
+  }
+  const content = record.content
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => asTrimmedString((part as Record<string, unknown>)?.text))
+      .filter(Boolean)
+      .join('')
+      .trim()
+    if (joined) return joined
+  }
+  return asTrimmedString(record.text)
 }
 
 function firstAsset(result: TaskResultDto, expectedType: GenerationResultType): TaskAssetDto {
@@ -292,6 +332,23 @@ export function normalizeCatalogTaskResult(
 ): GenerationNodeResult {
   if (result.status === 'failed') {
     throw new Error(describeTaskFailure(result))
+  }
+  // C5: 文本任务没有 asset，文本在 raw 里。单独成支，不走下面的图片/视频 asset 逻辑。
+  if (TEXT_TASK_KINDS.has(result.kind)) {
+    const text = extractTextFromChatRaw(result.raw)
+    if (!text) throw new Error('模型任务完成但没有返回文本内容')
+    const provenance = extractProvenanceFromTaskResult(result)
+    return {
+      id: `${node.id}-${result.id || Date.now()}`,
+      type: 'text',
+      text,
+      model: selectedModelKey(node) || undefined,
+      taskId: result.id,
+      taskKind: 'text',
+      raw: result.raw,
+      createdAt: Date.now(),
+      ...(provenance ? { provenance } : {}),
+    }
   }
   const inferredType = generationTypeForTask(result.kind)
   // Prefer actual asset type over taskKind inference — if the API returns a video asset, show video

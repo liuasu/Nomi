@@ -2,6 +2,7 @@ import type { GenerationCanvasEdge, GenerationCanvasNode, GenerationNodeResult }
 import { getGenerationNodeExecutionKind } from '../model/generationNodeKinds'
 import { generateImage } from './imageActions'
 import { resolveGenerationReferences } from './generationReferenceResolver'
+import { generateText } from './textActions'
 import { generateVideo } from './videoActions'
 
 export type GenerationNodeExecutorContext = {
@@ -23,6 +24,9 @@ export const generationNodeExecutor: GenerationNodeExecutor = async (node, conte
   if (executionKind === 'video') {
     const references = resolveGenerationReferences(node, context)
     return generateVideo(node, { references })
+  }
+  if (executionKind === 'text') {
+    return generateText(node)
   }
   throw new Error(`${node.kind} generation is not implemented yet`)
 }
