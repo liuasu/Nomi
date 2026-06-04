@@ -48,6 +48,13 @@ import {
 import { rememberWorkspace } from "./workspace/workspaceRegistry";
 import { resolveWorkspaceRelativePath } from "./workspace/workspacePaths";
 import { firstString, isJsonRecord, nowIso, readNestedRecord, trim, type JsonRecord } from "./jsonUtils";
+import {
+  collectAssetUrls,
+  firstMappedString,
+  providerMetaFromResponse,
+  taskStatusFromResponse,
+  valuesFromMapping,
+} from "./tasks/responseParsing";
 
 type ProjectRecord = {
   id: string;
@@ -2395,113 +2402,6 @@ async function executeProfileOperation(input: {
  * (e.g. `data.resultJson = "{\"resultUrls\":[...]}"`) and the mapping path
  * `data.resultJson.resultUrls.0` only works if we transparently parse.
  */
-function maybeParseJsonString(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
-  try { return JSON.parse(trimmed); } catch { return value; }
-}
-
-function pathValues(input: unknown, expression: string): unknown[] {
-  const parts = expression.split(".").map((part) => part.trim()).filter(Boolean);
-  let current: unknown[] = [input];
-  for (const part of parts) {
-    const wildcard = part.endsWith("[*]");
-    const key = wildcard ? part.slice(0, -3) : part;
-    const next: unknown[] = [];
-    for (const rawItem of current) {
-      const item = maybeParseJsonString(rawItem);
-      let value: unknown;
-      if (/^\d+$/.test(key) && Array.isArray(item)) {
-        value = item[Number(key)];
-      } else if (key && isJsonRecord(item)) {
-        value = item[key];
-      } else {
-        value = item;
-      }
-      if (wildcard) {
-        const parsed = maybeParseJsonString(value);
-        if (Array.isArray(parsed)) next.push(...parsed);
-      } else if (typeof value !== "undefined") {
-        next.push(value);
-      }
-    }
-    current = next;
-  }
-  return current;
-}
-
-function mappingCandidates(mapping: JsonRecord | null, key: string): string[] {
-  const raw = mapping?.[key];
-  if (Array.isArray(raw)) return raw.map((item) => String(item || "").trim()).filter(Boolean);
-  const direct = firstString(raw);
-  return direct ? [direct] : [];
-}
-
-function valuesFromMapping(response: unknown, mapping: JsonRecord | null, key: string): unknown[] {
-  return mappingCandidates(mapping, key).flatMap((candidate) => pathValues(response, candidate));
-}
-
-function firstMappedString(response: unknown, mapping: JsonRecord | null, key: string): string {
-  return firstString(...valuesFromMapping(response, mapping, key));
-}
-
-function collectAssetUrls(value: unknown): string[] {
-  if (typeof value === "string") {
-    const text = value.trim();
-    return /^(https?:\/\/|data:|nomi-local:\/\/)/i.test(text) ? [text] : [];
-  }
-  if (Array.isArray(value)) return value.flatMap(collectAssetUrls);
-  if (isJsonRecord(value)) {
-    return [
-      value.url,
-      value.video_url,
-      value.image_url,
-      value.output_url,
-      value.thumbnailUrl,
-    ].flatMap(collectAssetUrls);
-  }
-  return [];
-}
-
-function taskStatusFromResponse(response: unknown, responseMapping: JsonRecord | null, statusMapping: Record<string, string[]> | undefined, assetUrls: string[]): TaskResult["status"] {
-  const mappedStatus = firstMappedString(response, responseMapping, "status");
-  const fallbackStatus = firstString(
-    mappedStatus,
-    isJsonRecord(response) ? response.status : "",
-    isJsonRecord(response) ? readNestedRecord(response, ["data", "status"]) : "",
-    isJsonRecord(response) ? readNestedRecord(response, ["choices", "0", "finish_reason"]) : "",
-  ).toLowerCase();
-  const sm = statusMapping || {};
-  for (const status of ["queued", "running", "succeeded", "failed"] as const) {
-    const values = Array.isArray(sm[status]) ? sm[status] : [];
-    if (values.map((item) => String(item).toLowerCase()).includes(fallbackStatus)) return status;
-  }
-  if (["queued", "pending"].includes(fallbackStatus)) return "queued";
-  if (["running", "processing", "in_progress"].includes(fallbackStatus)) return "running";
-  if (["succeeded", "success", "completed", "complete", "done", "stop", "length"].includes(fallbackStatus)) return "succeeded";
-  if (["failed", "error", "timeout", "expired", "canceled", "cancelled"].includes(fallbackStatus)) return "failed";
-  if (assetUrls.length > 0) return "succeeded";
-  if (isJsonRecord(response) && (response.error || readNestedRecord(response, ["data", "error"]))) return "failed";
-  return "queued";
-}
-
-function providerMetaFromResponse(response: unknown, mapping: JsonRecord | null): JsonRecord {
-  const meta: JsonRecord = {};
-  if (mapping) {
-    for (const key of Object.keys(mapping)) {
-      const value = firstMappedString(response, mapping, key);
-      if (value) meta[key] = value;
-    }
-  }
-  const taskId = firstString(meta.query_id, meta.task_id, extractTaskIdShared(response));
-  if (taskId) {
-    meta.query_id = meta.query_id || taskId;
-    meta.task_id = meta.task_id || taskId;
-  }
-  return meta;
-}
-
 async function buildProfileTaskResult(input: {
   response: unknown;
   mapping: Mapping;

@@ -78,5 +78,6 @@ runtime.ts 最终退化为薄装配/re-export 层，main.ts 的 import 列表自
 ## 7. 进度
 | 步 | 模块 | 状态 | commit | runtime.ts |
 |---|---|---|---|---|
-| 1 | jsonUtils（trim/firstString/isJsonRecord/readNestedRecord/nowIso + JsonRecord） | ✅ | 见下 | 3150 → 3125 |
-| 2 | tasks/responseParsing | 下一步 | — | — |
+| 1 | jsonUtils（trim/firstString/isJsonRecord/readNestedRecord/nowIso + JsonRecord） | ✅ | `3fbd258` | 3150 → 3125 |
+| 2 | tasks/responseParsing（pathValues/collectAssetUrls/taskStatusFromResponse 等 8 个） | ✅ | 见下 | 3125 → 3030 |
+| 3 | assets/assetPaths | 下一步 | — | — |
